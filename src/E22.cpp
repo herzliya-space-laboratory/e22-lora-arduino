@@ -2,6 +2,11 @@
 
 namespace {
 
+constexpr uint8_t kCmdWrite      = 0xC0;  // write registers, saved in flash
+constexpr uint8_t kCmdRead       = 0xC1;  // read registers (replies start with this too)
+constexpr uint8_t kCmdWriteTemp  = 0xC2;  // write registers, lost after power cycle
+constexpr uint8_t kErrByte       = 0xFF;  // FF FF FF = the module rejected the command
+
 constexpr uint32_t kModeSwitchMs = 12;    // manual: 9..11 ms per mode switch
 constexpr uint32_t kStartupMs = 30;       // manual: about 16 ms from power-on
 
@@ -186,5 +191,47 @@ bool E22::readBytes(uint8_t* buf, size_t len, uint32_t timeoutMs) {
     delay(1);
   }
   return true;
+}
+
+// --- register protocol (mode 2) ----------------------------------------------
+
+bool E22::enterConfig(E22Mode& previous) {
+  previous = mode_;
+  return setMode(E22Mode::Configuration);
+}
+
+bool E22::leaveConfig(E22Mode previous) {
+  if (previous == E22Mode::Configuration) return true;
+  return setMode(previous);
+}
+
+bool E22::readRegisters(uint8_t addr, uint8_t len, uint8_t* out) {
+  flushInput();
+  const uint8_t cmd[3] = {kCmdRead, addr, len};
+  uart_.write(cmd, sizeof cmd);
+  uart_.flush();
+
+  uint8_t head[3];
+  if (!readBytes(head, 3, kDefaultTimeoutMs)) return false;
+  if (head[0] == kErrByte && head[1] == kErrByte && head[2] == kErrByte) return false;
+  if (head[0] != kCmdRead || head[1] != addr || head[2] != len) return false;
+  return readBytes(out, len, kDefaultTimeoutMs);
+}
+
+bool E22::writeRegisters(uint8_t cmd, uint8_t addr, uint8_t len, const uint8_t* data) {
+  flushInput();
+  const uint8_t head[3] = {cmd, addr, len};
+  uart_.write(head, sizeof head);
+  uart_.write(data, len);
+  uart_.flush();
+
+  // The reply is C1 addr len followed by the same values. Only the header
+  // is checked here. writeConfig reads the registers back afterwards.
+  uint8_t reply[3];
+  if (!readBytes(reply, 3, kDefaultTimeoutMs)) return false;
+  if (reply[0] == kErrByte && reply[1] == kErrByte && reply[2] == kErrByte) return false;
+  if (reply[0] != kCmdRead || reply[1] != addr || reply[2] != len) return false;
+  uint8_t echo[E22Config::kBytes];
+  return readBytes(echo, len, kDefaultTimeoutMs);
 }
 

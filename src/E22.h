@@ -105,6 +105,10 @@ class E22 {
   static constexpr uint32_t kConfigBaud = 9600;
 
  private:
+  bool enterConfig(E22Mode& previous);
+  bool leaveConfig(E22Mode previous);
+  bool readRegisters(uint8_t addr, uint8_t len, uint8_t* out);
+  bool writeRegisters(uint8_t cmd, uint8_t addr, uint8_t len, const uint8_t* data);
   bool readBytes(uint8_t* buf, size_t len, uint32_t timeoutMs);
   void openSerial(uint32_t baud);
   void driveModePins(E22Mode mode);
