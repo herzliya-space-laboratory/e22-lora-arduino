@@ -131,3 +131,24 @@ bool E22::waitIdle(uint32_t timeoutMs) {
   return true;
 }
 
+// --- low-level serial helpers ------------------------------------------------
+
+void E22::flushInput() {
+  while (uart_.available() > 0) uart_.read();
+}
+
+bool E22::readBytes(uint8_t* buf, size_t len, uint32_t timeoutMs) {
+  size_t got = 0;
+  uint32_t start = millis();
+  while (got < len) {
+    int b = uart_.read();
+    if (b >= 0) {
+      buf[got++] = (uint8_t)b;
+      continue;
+    }
+    if (millis() - start > timeoutMs) return false;
+    delay(1);
+  }
+  return true;
+}
+

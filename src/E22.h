@@ -94,11 +94,13 @@ class E22 {
 
   bool waitIdle(uint32_t timeoutMs = kDefaultTimeoutMs);  // AUX high, or timeout
   bool isIdle() const;
+  void flushInput();
 
   static constexpr uint32_t kDefaultTimeoutMs = 1000;
   static constexpr uint32_t kConfigBaud = 9600;
 
  private:
+  bool readBytes(uint8_t* buf, size_t len, uint32_t timeoutMs);
   void openSerial(uint32_t baud);
   void driveModePins(E22Mode mode);
 
