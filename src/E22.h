@@ -46,3 +46,32 @@ enum class E22PacketSize : uint8_t { B240 = 0, B128 = 1, B64 = 2, B32 = 3 };
 // REG1 bits 1:0. These are the dBm values for the 22 dBm modules.
 enum class E22TxPower : uint8_t { dBm22 = 0, dBm17 = 1, dBm14 = 2, dBm10 = 3 };
 
+// The nine config registers, 0x00..0x08, unpacked.
+struct E22Config {
+  uint16_t address = 0x0000;      // 00h,01h. 0xFFFF = broadcast / listen to all
+  uint8_t netId = 0;              // 02h
+  // 03h
+  E22UartBaud uartBaud = E22UartBaud::B9600;
+  E22Parity parity = E22Parity::N8;
+  E22AirRate airRate = E22AirRate::Rate2k4;
+  // 04h
+  E22PacketSize packetSize = E22PacketSize::B240;
+  bool ambientRssi = false;       // enables the noise/RSSI register reads in mode 0
+  bool softwareModeSwitch = false;
+  E22TxPower txPower = E22TxPower::dBm22;
+  // 05h. Frequency = 410.125 MHz + channel MHz. Factory 23 = 433.125.
+  uint8_t channel = 23;
+  // 06h
+  bool rssiByte = false;          // module adds an RSSI byte after received data
+  bool fixedPoint = false;        // first 3 bytes sent = destination address + channel
+  bool relay = false;
+  bool lbt = false;               // listen before talk
+  bool worTransmitter = false;
+  uint8_t worCycle = 3;           // (n+1) * 500 ms
+  uint16_t cryptKey = 0;          // 07h,08h. Write only, reads back as 0.
+
+  static constexpr size_t kBytes = 9;
+  void toBytes(uint8_t out[kBytes]) const;
+  static E22Config fromBytes(const uint8_t in[kBytes]);
+};
+
