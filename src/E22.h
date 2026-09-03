@@ -79,3 +79,34 @@ struct E22Config {
   uint32_t frequencyKHz() const { return 410125UL + 1000UL * channel; }  // 400 MHz band
 };
 
+class E22 {
+ public:
+  // Pass -1 for a pin that is not connected. M0 and M1 are needed to
+  // configure the module. AUX is optional; without it the driver uses fixed
+  // delays.
+  E22(HardwareSerial& uart, int8_t pinM0, int8_t pinM1, int8_t pinAux,
+      int8_t pinReset = -1);
+
+  // Sets up the pins, opens the port at uartBaud (must match the baud rate
+  // stored in the module, factory 9600) and enters transmission mode.
+  // rxPin/txPin are only used on ESP32. Returns false if AUX stays low.
+  bool begin(uint32_t uartBaud = 9600, int8_t rxPin = -1, int8_t txPin = -1);
+
+  bool waitIdle(uint32_t timeoutMs = kDefaultTimeoutMs);  // AUX high, or timeout
+  bool isIdle() const;
+
+  static constexpr uint32_t kDefaultTimeoutMs = 1000;
+  static constexpr uint32_t kConfigBaud = 9600;
+
+ private:
+  void openSerial(uint32_t baud);
+  void driveModePins(E22Mode mode);
+
+  HardwareSerial& uart_;
+  int8_t pinM0_, pinM1_, pinAux_, pinReset_;
+  int8_t rxPin_ = -1, txPin_ = -1;
+  uint32_t uartBaud_ = 9600;
+  E22Mode mode_ = E22Mode::Transmission;
+  E22Config cfg_;
+  bool cfgKnown_ = false;
+};

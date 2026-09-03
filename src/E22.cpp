@@ -1,5 +1,12 @@
 #include "E22.h"
 
+namespace {
+
+constexpr uint32_t kModeSwitchMs = 12;    // manual: 9..11 ms per mode switch
+constexpr uint32_t kStartupMs = 30;       // manual: about 16 ms from power-on
+
+}  // namespace
+
 // ---------------------------------------------------------------------------
 // E22Config
 
@@ -60,5 +67,67 @@ uint16_t E22Config::packetSizeBytes() const {
 uint32_t E22Config::uartBaudValue() const {
   static const uint32_t table[] = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
   return table[(uint8_t)uartBaud & 0x07];
+}
+
+// ---------------------------------------------------------------------------
+// E22
+
+E22::E22(HardwareSerial& uart, int8_t pinM0, int8_t pinM1, int8_t pinAux,
+         int8_t pinReset)
+    : uart_(uart), pinM0_(pinM0), pinM1_(pinM1), pinAux_(pinAux), pinReset_(pinReset) {}
+
+bool E22::begin(uint32_t uartBaud, int8_t rxPin, int8_t txPin) {
+  uartBaud_ = uartBaud;
+  rxPin_ = rxPin;
+  txPin_ = txPin;
+
+  if (pinM0_ >= 0) pinMode(pinM0_, OUTPUT);
+  if (pinM1_ >= 0) pinMode(pinM1_, OUTPUT);
+  if (pinAux_ >= 0) pinMode(pinAux_, INPUT);
+  if (pinReset_ >= 0) {
+    pinMode(pinReset_, OUTPUT);
+    digitalWrite(pinReset_, HIGH);
+  }
+
+  driveModePins(E22Mode::Transmission);
+  mode_ = E22Mode::Transmission;
+  openSerial(uartBaud_);
+
+  delay(kStartupMs);
+  return waitIdle();
+}
+
+void E22::openSerial(uint32_t baud) {
+  uart_.end();
+#if defined(ESP32)
+  uart_.begin(baud, SERIAL_8N1, rxPin_, txPin_);
+#else
+  uart_.begin(baud);
+#endif
+  uart_.setTimeout(20);
+}
+
+void E22::driveModePins(E22Mode mode) {
+  uint8_t m = (uint8_t)mode;
+  if (pinM0_ >= 0) digitalWrite(pinM0_, (m & 0x01) ? HIGH : LOW);
+  if (pinM1_ >= 0) digitalWrite(pinM1_, (m & 0x02) ? HIGH : LOW);
+}
+
+bool E22::isIdle() const {
+  if (pinAux_ < 0) return true;
+  return digitalRead(pinAux_) == HIGH;
+}
+
+bool E22::waitIdle(uint32_t timeoutMs) {
+  if (pinAux_ < 0) {
+    delay(kModeSwitchMs);
+    return true;
+  }
+  uint32_t start = millis();
+  while (!isIdle()) {
+    if (millis() - start > timeoutMs) return false;
+    delay(1);
+  }
+  return true;
 }
 
