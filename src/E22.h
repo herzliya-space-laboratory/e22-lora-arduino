@@ -73,5 +73,9 @@ struct E22Config {
   static constexpr size_t kBytes = 9;
   void toBytes(uint8_t out[kBytes]) const;
   static E22Config fromBytes(const uint8_t in[kBytes]);
+
+  uint16_t packetSizeBytes() const;
+  uint32_t uartBaudValue() const;
+  uint32_t frequencyKHz() const { return 410125UL + 1000UL * channel; }  // 400 MHz band
 };
 

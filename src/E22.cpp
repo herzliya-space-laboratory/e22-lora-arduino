@@ -48,3 +48,17 @@ E22Config E22Config::fromBytes(const uint8_t in[kBytes]) {
   return c;
 }
 
+uint16_t E22Config::packetSizeBytes() const {
+  switch (packetSize) {
+    case E22PacketSize::B128: return 128;
+    case E22PacketSize::B64:  return 64;
+    case E22PacketSize::B32:  return 32;
+    default:                  return 240;
+  }
+}
+
+uint32_t E22Config::uartBaudValue() const {
+  static const uint32_t table[] = {1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200};
+  return table[(uint8_t)uartBaud & 0x07];
+}
+
