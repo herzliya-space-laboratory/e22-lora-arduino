@@ -92,6 +92,9 @@ class E22 {
   // rxPin/txPin are only used on ESP32. Returns false if AUX stays low.
   bool begin(uint32_t uartBaud = 9600, int8_t rxPin = -1, int8_t txPin = -1);
 
+  // Mode
+  bool setMode(E22Mode mode);
+  E22Mode mode() const { return mode_; }
   bool waitIdle(uint32_t timeoutMs = kDefaultTimeoutMs);  // AUX high, or timeout
   bool isIdle() const;
   void flushInput();

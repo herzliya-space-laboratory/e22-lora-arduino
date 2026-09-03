@@ -131,6 +131,30 @@ bool E22::waitIdle(uint32_t timeoutMs) {
   return true;
 }
 
+bool E22::setMode(E22Mode mode) {
+  // The module ignores M0/M1 while AUX is low (manual 5.2.5).
+  if (!waitIdle()) return false;
+  if (mode == mode_) return true;
+
+  E22Mode previous = mode_;
+  driveModePins(mode);
+  mode_ = mode;
+
+  // Wait a little for AUX to go low, then wait for it to go high again.
+  delay(2);
+  bool ok = waitIdle();
+  delay(kModeSwitchMs);
+
+  // Configuration mode forces 9600 8N1 on the UART (manual 6.1 / 7.1.12).
+  bool wasConfig = previous == E22Mode::Configuration;
+  bool isConfig = mode == E22Mode::Configuration;
+  if (isConfig && uartBaud_ != kConfigBaud) openSerial(kConfigBaud);
+  if (wasConfig && uartBaud_ != kConfigBaud) openSerial(uartBaud_);
+
+  flushInput();
+  return ok;
+}
+
 // --- low-level serial helpers ------------------------------------------------
 
 void E22::flushInput() {
