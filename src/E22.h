@@ -97,6 +97,8 @@ class E22 {
   E22Mode mode() const { return mode_; }
   bool waitIdle(uint32_t timeoutMs = kDefaultTimeoutMs);  // AUX high, or timeout
   bool isIdle() const;
+  bool hardReset();  // pulses RESET, if a RESET pin was given
+
   void flushInput();
 
   static constexpr uint32_t kDefaultTimeoutMs = 1000;

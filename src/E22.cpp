@@ -155,6 +155,18 @@ bool E22::setMode(E22Mode mode) {
   return ok;
 }
 
+bool E22::hardReset() {
+  if (pinReset_ < 0) return false;
+  digitalWrite(pinReset_, LOW);
+  delay(2);  // manual: hold low > 100 us
+  digitalWrite(pinReset_, HIGH);
+  delay(kStartupMs);
+  // The module samples M0/M1 at boot, so mode_ stays valid.
+  if (mode_ == E22Mode::Configuration && uartBaud_ != kConfigBaud) openSerial(kConfigBaud);
+  flushInput();
+  return waitIdle();
+}
+
 // --- low-level serial helpers ------------------------------------------------
 
 void E22::flushInput() {
