@@ -273,3 +273,45 @@ bool E22::writeConfig(const E22Config& cfg, bool persist) {
   return ok;
 }
 
+bool E22::updateConfig(bool persist, void (*mutate)(E22Config&, uint32_t), uint32_t arg) {
+  E22Config c;
+  if (cfgKnown_) {
+    c = cfg_;
+  } else if (!readConfig(c)) {
+    return false;
+  }
+  mutate(c, arg);
+  return writeConfig(c, persist);
+}
+
+bool E22::setChannel(uint8_t channel, bool persist) {
+  if (channel > 83) return false;
+  return updateConfig(persist, [](E22Config& c, uint32_t v) { c.channel = (uint8_t)v; }, channel);
+}
+
+bool E22::setAirRate(E22AirRate rate, bool persist) {
+  return updateConfig(persist, [](E22Config& c, uint32_t v) { c.airRate = (E22AirRate)v; },
+                      (uint32_t)rate);
+}
+
+bool E22::setTxPower(E22TxPower power, bool persist) {
+  return updateConfig(persist, [](E22Config& c, uint32_t v) { c.txPower = (E22TxPower)v; },
+                      (uint32_t)power);
+}
+
+bool E22::setAddress(uint16_t address, uint8_t netId, bool persist) {
+  uint32_t packed = ((uint32_t)address << 8) | netId;
+  return updateConfig(persist, [](E22Config& c, uint32_t v) {
+    c.address = (uint16_t)(v >> 8);
+    c.netId = (uint8_t)(v & 0xFF);
+  }, packed);
+}
+
+bool E22::setRssiByte(bool enable, bool persist) {
+  return updateConfig(persist, [](E22Config& c, uint32_t v) { c.rssiByte = v != 0; }, enable);
+}
+
+bool E22::setAmbientRssi(bool enable, bool persist) {
+  return updateConfig(persist, [](E22Config& c, uint32_t v) { c.ambientRssi = v != 0; }, enable);
+}
+

@@ -105,6 +105,13 @@ class E22 {
   bool readConfig(E22Config& out);
   bool writeConfig(const E22Config& cfg, bool persist = true);
 
+  bool setChannel(uint8_t channel, bool persist = true);
+  bool setAirRate(E22AirRate rate, bool persist = false);
+  bool setTxPower(E22TxPower power, bool persist = true);
+  bool setAddress(uint16_t address, uint8_t netId, bool persist = true);
+  bool setRssiByte(bool enable, bool persist = true);
+  bool setAmbientRssi(bool enable, bool persist = true);
+
   void flushInput();
   // The last configuration that was read or written.
   const E22Config& config() const { return cfg_; }
@@ -119,6 +126,7 @@ class E22 {
   bool readRegisters(uint8_t addr, uint8_t len, uint8_t* out);
   bool writeRegisters(uint8_t cmd, uint8_t addr, uint8_t len, const uint8_t* data);
   bool readBytes(uint8_t* buf, size_t len, uint32_t timeoutMs);
+  bool updateConfig(bool persist, void (*mutate)(E22Config&, uint32_t), uint32_t arg);
   void openSerial(uint32_t baud);
   void driveModePins(E22Mode mode);
 
