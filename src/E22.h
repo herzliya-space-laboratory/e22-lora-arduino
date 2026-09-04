@@ -118,6 +118,11 @@ class E22 {
                  uint32_t timeoutMs = kDefaultTimeoutMs);
   bool readFirmwareVersion(char* buf, size_t len);
 
+  // Data, transmission mode only.
+  // send() splits the data into packet-sized chunks and waits for AUX
+  // before each chunk. Returns the number of bytes sent.
+  size_t send(const uint8_t* data, size_t len);
+  size_t send(const char* text) { return send((const uint8_t*)text, strlen(text)); }
   void flushInput();
   // The last configuration that was read or written.
   const E22Config& config() const { return cfg_; }

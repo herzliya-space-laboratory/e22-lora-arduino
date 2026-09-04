@@ -357,3 +357,20 @@ bool E22::readFirmwareVersion(char* buf, size_t len) {
   return atCommand("AT+FWCODE=?", buf, len);
 }
 
+// --- data path (mode 0) ------------------------------------------------------
+
+size_t E22::send(const uint8_t* data, size_t len) {
+  if (mode_ != E22Mode::Transmission) return 0;
+  size_t chunk = cfgKnown_ ? cfg_.packetSizeBytes() : 240;
+  size_t sent = 0;
+  while (sent < len) {
+    size_t n = len - sent;
+    if (n > chunk) n = chunk;
+    if (!waitIdle()) break;
+    uart_.write(data + sent, n);
+    uart_.flush();
+    sent += n;
+  }
+  return sent;
+}
+
