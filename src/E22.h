@@ -123,6 +123,8 @@ class E22 {
   // before each chunk. Returns the number of bytes sent.
   size_t send(const uint8_t* data, size_t len);
   size_t send(const char* text) { return send((const uint8_t*)text, strlen(text)); }
+  // Fixed-point mode: adds destination address + channel in front. Needs cfg.fixedPoint.
+  size_t sendTo(uint16_t address, uint8_t channel, const uint8_t* data, size_t len);
   void flushInput();
   // The last configuration that was read or written.
   const E22Config& config() const { return cfg_; }

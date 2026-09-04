@@ -374,3 +374,15 @@ size_t E22::send(const uint8_t* data, size_t len) {
   return sent;
 }
 
+size_t E22::sendTo(uint16_t address, uint8_t channel, const uint8_t* data, size_t len) {
+  if (mode_ != E22Mode::Transmission) return 0;
+  size_t chunk = cfgKnown_ ? cfg_.packetSizeBytes() : 240;
+  if (len + 3 > chunk) return 0;  // header + data must fit in one packet
+  if (!waitIdle()) return 0;
+  const uint8_t head[3] = {(uint8_t)(address >> 8), (uint8_t)(address & 0xFF), channel};
+  uart_.write(head, sizeof head);
+  uart_.write(data, len);
+  uart_.flush();
+  return len;
+}
+
