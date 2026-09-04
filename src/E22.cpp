@@ -386,3 +386,20 @@ size_t E22::sendTo(uint16_t address, uint8_t channel, const uint8_t* data, size_
   return len;
 }
 
+size_t E22::available() {
+  int n = uart_.available();
+  return n < 0 ? 0 : (size_t)n;
+}
+
+size_t E22::read(uint8_t* buf, size_t maxLen) {
+  size_t n = 0;
+  while (n < maxLen) {
+    int b = uart_.read();
+    if (b < 0) break;
+    buf[n++] = (uint8_t)b;
+  }
+  return n;
+}
+
+int E22::readByte() { return uart_.read(); }
+
