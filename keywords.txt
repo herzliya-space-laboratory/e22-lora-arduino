@@ -1,0 +1,37 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+E22	KEYWORD1
+E22Config	KEYWORD1
+E22Mode	KEYWORD1
+E22AirRate	KEYWORD1
+E22TxPower	KEYWORD1
+E22UartBaud	KEYWORD1
+E22Parity	KEYWORD1
+E22PacketSize	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+begin	KEYWORD2
+setMode	KEYWORD2
+waitIdle	KEYWORD2
+isIdle	KEYWORD2
+readConfig	KEYWORD2
+writeConfig	KEYWORD2
+setChannel	KEYWORD2
+setAirRate	KEYWORD2
+setTxPower	KEYWORD2
+setAddress	KEYWORD2
+setRssiByte	KEYWORD2
+setAmbientRssi	KEYWORD2
+atCommand	KEYWORD2
+readFirmwareVersion	KEYWORD2
+send	KEYWORD2
+sendTo	KEYWORD2
+available	KEYWORD2
+read	KEYWORD2
+readByte	KEYWORD2
+rssiByteToDbm	KEYWORD2
