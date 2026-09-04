@@ -9,6 +9,7 @@ constexpr uint8_t kErrByte       = 0xFF;  // FF FF FF = the module rejected the 
 
 constexpr uint32_t kModeSwitchMs = 12;    // manual: 9..11 ms per mode switch
 constexpr uint32_t kStartupMs = 30;       // manual: about 16 ms from power-on
+constexpr uint32_t kAtIdleGapMs = 50;     // some firmware versions send AT replies without \n
 
 }  // namespace
 
@@ -313,5 +314,46 @@ bool E22::setRssiByte(bool enable, bool persist) {
 
 bool E22::setAmbientRssi(bool enable, bool persist) {
   return updateConfig(persist, [](E22Config& c, uint32_t v) { c.ambientRssi = v != 0; }, enable);
+}
+
+// --- AT commands (mode 2) ----------------------------------------------------
+
+bool E22::atCommand(const char* cmd, char* reply, size_t replyLen, uint32_t timeoutMs) {
+  if (replyLen == 0) return false;
+  E22Mode prev;
+  if (!enterConfig(prev)) return false;
+
+  flushInput();
+  // No CR/LF. Firmware 7453-0-20 and older does not accept it, and newer
+  // firmware works with or without it.
+  uart_.print(cmd);
+  uart_.flush();
+
+  size_t n = 0;
+  bool gotAny = false, done = false;
+  uint32_t start = millis(), last = millis();
+  while (!done) {
+    int b = uart_.read();
+    if (b >= 0) {
+      gotAny = true;
+      last = millis();
+      if (b == '\n') { done = true; continue; }
+      if (b == '\r') continue;
+      if (n + 1 < replyLen) reply[n++] = (char)b;
+      continue;
+    }
+    uint32_t now = millis();
+    if (gotAny && now - last > kAtIdleGapMs) done = true;
+    else if (now - start > timeoutMs) done = true;
+    else delay(1);
+  }
+  reply[n] = '\0';
+
+  leaveConfig(prev);
+  return gotAny && strstr(reply, "ERR") == nullptr;
+}
+
+bool E22::readFirmwareVersion(char* buf, size_t len) {
+  return atCommand("AT+FWCODE=?", buf, len);
 }
 

@@ -112,6 +112,12 @@ class E22 {
   bool setRssiByte(bool enable, bool persist = true);
   bool setAmbientRssi(bool enable, bool persist = true);
 
+  // AT command in configuration mode. The reply is copied without CR/LF,
+  // for example atCommand("AT+FWCODE=?") gives "FWCODE=7453-0-23".
+  bool atCommand(const char* cmd, char* reply, size_t replyLen,
+                 uint32_t timeoutMs = kDefaultTimeoutMs);
+  bool readFirmwareVersion(char* buf, size_t len);
+
   void flushInput();
   // The last configuration that was read or written.
   const E22Config& config() const { return cfg_; }
