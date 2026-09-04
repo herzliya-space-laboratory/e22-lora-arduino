@@ -248,3 +248,28 @@ bool E22::readConfig(E22Config& out) {
   return true;
 }
 
+bool E22::writeConfig(const E22Config& cfg, bool persist) {
+  uint8_t want[E22Config::kBytes];
+  cfg.toBytes(want);
+
+  E22Mode prev;
+  if (!enterConfig(prev)) return false;
+
+  bool ok = writeRegisters(persist ? kCmdWrite : kCmdWriteTemp, 0x00,
+                           E22Config::kBytes, want);
+  if (ok) {
+    uint8_t got[E22Config::kBytes];
+    ok = readRegisters(0x00, E22Config::kBytes, got);
+    // Bytes 7 and 8 are the key, which always reads back as 0.
+    if (ok) ok = memcmp(want, got, 7) == 0;
+  }
+
+  if (ok) {
+    cfg_ = cfg;
+    cfgKnown_ = true;
+    uartBaud_ = cfg.uartBaudValue();  // leaveConfig reopens the port at this rate
+  }
+  leaveConfig(prev);
+  return ok;
+}
+

@@ -103,6 +103,8 @@ class E22 {
   // operation, and switches back to the previous mode. Writes are read back
   // and compared; the result is false if they do not match.
   bool readConfig(E22Config& out);
+  bool writeConfig(const E22Config& cfg, bool persist = true);
+
   void flushInput();
   // The last configuration that was read or written.
   const E22Config& config() const { return cfg_; }
