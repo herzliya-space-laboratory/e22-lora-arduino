@@ -235,3 +235,16 @@ bool E22::writeRegisters(uint8_t cmd, uint8_t addr, uint8_t len, const uint8_t* 
   return readBytes(echo, len, kDefaultTimeoutMs);
 }
 
+bool E22::readConfig(E22Config& out) {
+  E22Mode prev;
+  if (!enterConfig(prev)) return false;
+  uint8_t raw[E22Config::kBytes];
+  bool ok = readRegisters(0x00, E22Config::kBytes, raw);
+  leaveConfig(prev);
+  if (!ok) return false;
+  out = E22Config::fromBytes(raw);
+  cfg_ = out;
+  cfgKnown_ = true;
+  return true;
+}
+

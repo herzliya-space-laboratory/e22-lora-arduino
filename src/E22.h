@@ -99,7 +99,14 @@ class E22 {
   bool isIdle() const;
   bool hardReset();  // pulses RESET, if a RESET pin was given
 
+  // Configuration. Each of these switches to configuration mode, does the
+  // operation, and switches back to the previous mode. Writes are read back
+  // and compared; the result is false if they do not match.
+  bool readConfig(E22Config& out);
   void flushInput();
+  // The last configuration that was read or written.
+  const E22Config& config() const { return cfg_; }
+  bool configKnown() const { return cfgKnown_; }
 
   static constexpr uint32_t kDefaultTimeoutMs = 1000;
   static constexpr uint32_t kConfigBaud = 9600;
