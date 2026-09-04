@@ -133,6 +133,13 @@ class E22 {
   int readByte();  // -1 if no byte is available
   void flushInput();
 
+  // Noise level (register 0x00) and RSSI of the last packet (register 0x01),
+  // in dBm. Needs cfg.ambientRssi, and works only in transmission mode.
+  bool readAmbientRssi(int& dbm);
+  bool readLastPacketRssi(int& dbm);
+
+  static int rssiByteToDbm(uint8_t b) { return b == 0 ? 0 : -(256 - (int)b); }
+
   // The last configuration that was read or written.
   const E22Config& config() const { return cfg_; }
   bool configKnown() const { return cfgKnown_; }
@@ -146,6 +153,7 @@ class E22 {
   bool readRegisters(uint8_t addr, uint8_t len, uint8_t* out);
   bool writeRegisters(uint8_t cmd, uint8_t addr, uint8_t len, const uint8_t* data);
   bool readBytes(uint8_t* buf, size_t len, uint32_t timeoutMs);
+  bool readRssiRegister(uint8_t addr, int& dbm);
   bool updateConfig(bool persist, void (*mutate)(E22Config&, uint32_t), uint32_t arg);
   void openSerial(uint32_t baud);
   void driveModePins(E22Mode mode);

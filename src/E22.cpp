@@ -403,3 +403,19 @@ size_t E22::read(uint8_t* buf, size_t maxLen) {
 
 int E22::readByte() { return uart_.read(); }
 
+bool E22::readRssiRegister(uint8_t addr, int& dbm) {
+  if (mode_ != E22Mode::Transmission) return false;
+  if (!waitIdle()) return false;
+  flushInput();
+  const uint8_t cmd[6] = {0xC0, 0xC1, 0xC2, 0xC3, addr, 0x01};
+  uart_.write(cmd, sizeof cmd);
+  uart_.flush();
+  uint8_t reply[4];
+  if (!readBytes(reply, 4, kDefaultTimeoutMs)) return false;
+  if (reply[0] != kCmdRead || reply[1] != addr || reply[2] != 0x01) return false;
+  dbm = -(256 - (int)reply[3]);
+  return true;
+}
+
+bool E22::readAmbientRssi(int& dbm) { return readRssiRegister(0x00, dbm); }
+bool E22::readLastPacketRssi(int& dbm) { return readRssiRegister(0x01, dbm); }
