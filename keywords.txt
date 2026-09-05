@@ -19,6 +19,7 @@ begin	KEYWORD2
 setMode	KEYWORD2
 waitIdle	KEYWORD2
 isIdle	KEYWORD2
+hardReset	KEYWORD2
 readConfig	KEYWORD2
 writeConfig	KEYWORD2
 setChannel	KEYWORD2
@@ -34,4 +35,9 @@ sendTo	KEYWORD2
 available	KEYWORD2
 read	KEYWORD2
 readByte	KEYWORD2
+flushInput	KEYWORD2
+readAmbientRssi	KEYWORD2
+readLastPacketRssi	KEYWORD2
 rssiByteToDbm	KEYWORD2
+frequencyKHz	KEYWORD2
+packetSizeBytes	KEYWORD2
