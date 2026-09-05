@@ -2,21 +2,29 @@
 // Run this first on a new board. If the values are correct, the wiring and
 // the baud rate are correct.
 //
-// The pins below are for an ESP32: GPIO17 -> RXD, GPIO16 <- TXD,
-// GPIO32 -> M0, GPIO33 -> M1, GPIO34 <- AUX (an input-only pin is fine
-// here), GPIO27 -> RESET (optional, -1 if not connected). Change them to
-// match your board.
+// On the flight board (ATmega328PB, module on J3) the pin numbers below are
+// placeholders until we have the schematic. On the ESP32 bench setup:
+// GPIO17 -> RXD, GPIO16 <- TXD, GPIO32 -> M0, GPIO33 -> M1, GPIO34 <- AUX,
+// GPIO27 -> RESET if the module has one (the DIP module does not).
 
 #include <E22.h>
 
-constexpr int8_t PIN_M0 = 32;
-constexpr int8_t PIN_M1 = 33;
-constexpr int8_t PIN_AUX = 34;
-constexpr int8_t PIN_RESET = 27;
-constexpr int8_t PIN_RX = 16;  // ESP32 pin connected to E22 TXD
-constexpr int8_t PIN_TX = 17;  // ESP32 pin connected to E22 RXD
+#if defined(ESP32)
+#define RADIO_SERIAL Serial2
+constexpr int8_t PIN_M0 = 32, PIN_M1 = 33, PIN_AUX = 34, PIN_RESET = 27;
+constexpr int8_t PIN_RX = 16, PIN_TX = 17;
+#elif defined(HAVE_HWSERIAL1)
+#define RADIO_SERIAL Serial1  // ATmega328PB USART1: PB4 = RXD1, PB3 = TXD1
+constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
+constexpr int8_t PIN_RX = -1, PIN_TX = -1;
+#else
+#define RADIO_SERIAL Serial   // single-UART boards: radio and debug share it
+constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
+constexpr int8_t PIN_RX = -1, PIN_TX = -1;
+#endif
+#define DEBUG Serial
 
-E22 radio(Serial2, PIN_M0, PIN_M1, PIN_AUX, PIN_RESET);
+E22 radio(RADIO_SERIAL, PIN_M0, PIN_M1, PIN_AUX, PIN_RESET);
 
 static const char* airRateName(E22AirRate r) {
   switch (r) {
@@ -29,49 +37,52 @@ static const char* airRateName(E22AirRate r) {
   }
 }
 
-static const char* txPowerName(E22TxPower p) {
-  switch (p) {
-    case E22TxPower::dBm17: return "17 dBm";
-    case E22TxPower::dBm14: return "14 dBm";
-    case E22TxPower::dBm10: return "10 dBm";
-    default:                return "22 dBm";
-  }
+static void printRow(const char* label, const char* value) {
+  DEBUG.print(label);
+  DEBUG.println(value);
+}
+
+static void printRow(const char* label, unsigned long value) {
+  DEBUG.print(label);
+  DEBUG.println(value);
 }
 
 void setup() {
-  Serial.begin(115200);
+  DEBUG.begin(115200);
   delay(500);
-  Serial.println("\nE22 ReadConfig");
+  DEBUG.println(F("\nE22 ReadConfig"));
 
   if (!radio.begin(9600, PIN_RX, PIN_TX)) {
-    Serial.println("begin() failed: AUX never went idle. Check wiring and power.");
+    DEBUG.println(F("begin() failed: AUX never went idle. Check wiring and power."));
   }
 
   E22Config cfg;
   if (!radio.readConfig(cfg)) {
-    Serial.println("readConfig() failed. Check M0/M1 wiring and that the UART is 9600.");
+    DEBUG.println(F("readConfig() failed. Check M0/M1 wiring and that the UART is 9600."));
     return;
   }
 
-  Serial.printf("address      0x%04X\n", cfg.address);
-  Serial.printf("netId        %u\n", cfg.netId);
-  Serial.printf("uart         %lu baud, parity %u\n", (unsigned long)cfg.uartBaudValue(), (unsigned)cfg.parity);
-  Serial.printf("air rate     %s\n", airRateName(cfg.airRate));
-  Serial.printf("packet size  %u bytes\n", cfg.packetSizeBytes());
-  Serial.printf("tx power     %s\n", txPowerName(cfg.txPower));
-  Serial.printf("channel      %u  (%lu.%03lu MHz)\n", cfg.channel,
-                (unsigned long)(cfg.frequencyKHz() / 1000), (unsigned long)(cfg.frequencyKHz() % 1000));
-  Serial.printf("rssi byte    %s\n", cfg.rssiByte ? "on" : "off");
-  Serial.printf("ambient rssi %s\n", cfg.ambientRssi ? "on" : "off");
-  Serial.printf("fixed point  %s\n", cfg.fixedPoint ? "on" : "off");
-  Serial.printf("relay        %s\n", cfg.relay ? "on" : "off");
-  Serial.printf("lbt          %s\n", cfg.lbt ? "on" : "off");
+  DEBUG.print(F("address      0x")); DEBUG.println(cfg.address, HEX);
+  printRow("netId        ", (unsigned long)cfg.netId);
+  printRow("uart baud    ", cfg.uartBaudValue());
+  printRow("air rate     ", airRateName(cfg.airRate));
+  printRow("packet size  ", (unsigned long)cfg.packetSizeBytes());
+  DEBUG.print(F("tx power     level ")); DEBUG.print((uint8_t)cfg.txPower);
+  DEBUG.println(F("  (0 = max: 30 dBm on T30, 22 dBm on T22)"));
+  DEBUG.print(F("channel      ")); DEBUG.print(cfg.channel);
+  DEBUG.print(F("  (")); DEBUG.print(cfg.frequencyKHz() / 1000);
+  DEBUG.print('.'); DEBUG.print(cfg.frequencyKHz() % 1000); DEBUG.println(F(" MHz)"));
+  printRow("rssi byte    ", cfg.rssiByte ? "on" : "off");
+  printRow("ambient rssi ", cfg.ambientRssi ? "on" : "off");
+  printRow("fixed point  ", cfg.fixedPoint ? "on" : "off");
+  printRow("relay        ", cfg.relay ? "on" : "off");
+  printRow("lbt          ", cfg.lbt ? "on" : "off");
 
   char fw[32];
   if (radio.readFirmwareVersion(fw, sizeof fw)) {
-    Serial.printf("firmware     %s\n", fw);
+    printRow("firmware     ", fw);
   } else {
-    Serial.println("firmware     (AT+FWCODE not answered; old firmware or wiring)");
+    DEBUG.println(F("firmware     (AT+FWCODE not answered; old firmware or wiring)"));
   }
 }
 
