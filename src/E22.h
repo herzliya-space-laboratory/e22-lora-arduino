@@ -1,11 +1,13 @@
-// Driver for the Ebyte E22 UART LoRa modules (E22-400T22S; the rest of the
-// T series uses the same protocol).
+// Driver for the Ebyte E22 UART LoRa modules. We have the E22-400T30D, but
+// the T22S, T22D and T30S use the same protocol.
 //
 // The module works like a serial modem. You talk to it over UART, select the
 // mode with M0/M1, and read AUX to know when it is busy. This class does the
 // mode switching, the register read/write protocol (C0/C1/C2 commands,
 // manual section 6) and simple send/receive. It does not do packet framing.
 // That is done in the sketch.
+//
+// Runs on the ATmega328PB (2 KB RAM, so keep memory use small) and on ESP32.
 
 #pragma once
 
@@ -43,8 +45,13 @@ enum class E22AirRate : uint8_t {
 // REG1 bits 7:6
 enum class E22PacketSize : uint8_t { B240 = 0, B128 = 1, B64 = 2, B32 = 3 };
 
-// REG1 bits 1:0. These are the dBm values for the 22 dBm modules.
-enum class E22TxPower : uint8_t { dBm22 = 0, dBm17 = 1, dBm14 = 2, dBm10 = 3 };
+// REG1 bits 1:0. The same four codes on every module, Level0 = maximum.
+// The dBm names are aliases for the same values.
+enum class E22TxPower : uint8_t {
+  Level0 = 0, Level1 = 1, Level2 = 2, Level3 = 3,
+  dBm30 = 0, dBm27 = 1, dBm24 = 2, dBm21 = 3,   // T30S / T30D
+  dBm22 = 0, dBm17 = 1, dBm14 = 2, dBm10 = 3,   // T22S / T22D
+};
 
 // The nine config registers, 0x00..0x08, unpacked.
 struct E22Config {
@@ -58,8 +65,9 @@ struct E22Config {
   E22PacketSize packetSize = E22PacketSize::B240;
   bool ambientRssi = false;       // enables the noise/RSSI register reads in mode 0
   bool softwareModeSwitch = false;
-  E22TxPower txPower = E22TxPower::dBm22;
+  E22TxPower txPower = E22TxPower::Level0;
   // 05h. Frequency = 410.125 MHz + channel MHz. Factory 23 = 433.125.
+  // The satellite's main radio is on 436.4 MHz, so do not use 25..28.
   uint8_t channel = 23;
   // 06h
   bool rssiByte = false;          // module adds an RSSI byte after received data
@@ -83,7 +91,7 @@ class E22 {
  public:
   // Pass -1 for a pin that is not connected. M0 and M1 are needed to
   // configure the module. AUX is optional; without it the driver uses fixed
-  // delays.
+  // delays. The DIP modules have no RESET pin.
   E22(HardwareSerial& uart, int8_t pinM0, int8_t pinM1, int8_t pinAux,
       int8_t pinReset = -1);
 
