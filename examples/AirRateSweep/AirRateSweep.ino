@@ -84,7 +84,7 @@ void pumpReceive() {
       continue;
     }
     if (b == '\n') { awaitingRssi = true; continue; }
-    if (lineLen + 1 < sizeof line) line[lineLen++] = (char)b;
+    if ((size_t)lineLen + 1 < sizeof line) line[lineLen++] = (char)b;
   }
 }
 

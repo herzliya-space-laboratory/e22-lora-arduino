@@ -81,7 +81,7 @@ void pumpReceive() {
       awaitingRssi = true;  // the RSSI byte comes after the packet
       continue;
     }
-    if (lineLen + 1 < sizeof line) line[lineLen++] = (char)b;
+    if ((size_t)lineLen + 1 < sizeof line) line[lineLen++] = (char)b;
   }
 }
 
