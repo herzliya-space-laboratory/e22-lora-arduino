@@ -17,41 +17,49 @@
 constexpr uint32_t DWELL_MS = 10000;
 constexpr uint32_t BEACON_MS = 1000;
 
-constexpr int8_t PIN_M0 = 32;
-constexpr int8_t PIN_M1 = 33;
-constexpr int8_t PIN_AUX = 34;
-constexpr int8_t PIN_RESET = 27;
-constexpr int8_t PIN_RX = 16;
-constexpr int8_t PIN_TX = 17;
+#if defined(ESP32)
+#define RADIO_SERIAL Serial2
+constexpr int8_t PIN_M0 = 32, PIN_M1 = 33, PIN_AUX = 34, PIN_RESET = 27;
+constexpr int8_t PIN_RX = 16, PIN_TX = 17;
+#elif defined(HAVE_HWSERIAL1)
+#define RADIO_SERIAL Serial1  // ATmega328PB USART1: PB4 = RXD1, PB3 = TXD1
+constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
+constexpr int8_t PIN_RX = -1, PIN_TX = -1;
+#else
+#define RADIO_SERIAL Serial
+constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
+constexpr int8_t PIN_RX = -1, PIN_TX = -1;
+#endif
+#define DEBUG Serial
 
-E22 radio(Serial2, PIN_M0, PIN_M1, PIN_AUX, PIN_RESET);
+E22 radio(RADIO_SERIAL, PIN_M0, PIN_M1, PIN_AUX, PIN_RESET);
 
 const E22AirRate RATES[] = {
   E22AirRate::Rate2k4, E22AirRate::Rate4k8, E22AirRate::Rate9k6,
   E22AirRate::Rate19k2, E22AirRate::Rate38k4, E22AirRate::Rate62k5,
 };
-const char* RATE_NAMES[] = {"2.4k", "4.8k", "9.6k", "19.2k", "38.4k", "62.5k"};
-constexpr size_t RATE_COUNT = sizeof RATES / sizeof RATES[0];
+const char* const RATE_NAMES[] = {"2.4k", "4.8k", "9.6k", "19.2k", "38.4k", "62.5k"};
+constexpr uint8_t RATE_COUNT = sizeof RATES / sizeof RATES[0];
 
-size_t currentRate = RATE_COUNT;  // forces a rate change in the first loop()
+uint8_t currentRate = RATE_COUNT;  // forces a rate change in the first loop()
 uint32_t t0 = 0;
 uint32_t lastBeacon = 0;
 uint32_t seq = 0;
 
-char line[128];
-size_t lineLen = 0;
+char line[64];
+uint8_t lineLen = 0;
 bool awaitingRssi = false;
 
 void setup() {
-  Serial.begin(115200);
+  DEBUG.begin(115200);
   delay(500);
-  Serial.println(ROLE_SENDER ? "\nE22 AirRateSweep: sender" : "\nE22 AirRateSweep: receiver");
+  DEBUG.println(ROLE_SENDER ? F("\nE22 AirRateSweep: sender") : F("\nE22 AirRateSweep: receiver"));
 
-  if (!radio.begin(9600, PIN_RX, PIN_TX)) Serial.println("begin() failed");
+  if (!radio.begin(9600, PIN_RX, PIN_TX)) DEBUG.println(F("begin() failed"));
 
   E22Config cfg;
   if (!radio.readConfig(cfg)) {
-    Serial.println("readConfig() failed");
+    DEBUG.println(F("readConfig() failed"));
     return;
   }
   cfg.channel = 23;
@@ -59,7 +67,7 @@ void setup() {
   cfg.netId = 0;
   cfg.rssiByte = true;
   cfg.airRate = RATES[0];
-  if (!radio.writeConfig(cfg)) Serial.println("writeConfig() failed");
+  if (!radio.writeConfig(cfg)) DEBUG.println(F("writeConfig() failed"));
   t0 = millis();
 }
 
@@ -69,8 +77,9 @@ void pumpReceive() {
     if (awaitingRssi) {
       awaitingRssi = false;
       line[lineLen] = '\0';
-      Serial.printf("[%s] rx \"%s\" rssi %d dBm\n", RATE_NAMES[currentRate], line,
-                    E22::rssiByteToDbm((uint8_t)b));
+      DEBUG.print('['); DEBUG.print(RATE_NAMES[currentRate]); DEBUG.print(F("] rx \""));
+      DEBUG.print(line); DEBUG.print(F("\" rssi "));
+      DEBUG.print(E22::rssiByteToDbm((uint8_t)b)); DEBUG.println(F(" dBm"));
       lineLen = 0;
       continue;
     }
@@ -80,13 +89,14 @@ void pumpReceive() {
 }
 
 void loop() {
-  size_t slot = ((millis() - t0) / DWELL_MS) % RATE_COUNT;
+  uint8_t slot = (uint8_t)(((millis() - t0) / DWELL_MS) % RATE_COUNT);
   if (slot != currentRate) {
     currentRate = slot;
     lineLen = 0;
     awaitingRssi = false;
     bool ok = radio.setAirRate(RATES[slot], /*persist=*/false);
-    Serial.printf("== air rate %s %s\n", RATE_NAMES[slot], ok ? "" : "(set failed)");
+    DEBUG.print(F("== air rate ")); DEBUG.print(RATE_NAMES[slot]);
+    DEBUG.println(ok ? F("") : F(" (set failed)"));
   }
 
   pumpReceive();
@@ -94,7 +104,7 @@ void loop() {
 #if ROLE_SENDER
   if (millis() - lastBeacon >= BEACON_MS) {
     lastBeacon = millis();
-    char msg[48];
+    char msg[40];
     snprintf(msg, sizeof msg, "BCN seq=%lu rate=%s\n", (unsigned long)seq++, RATE_NAMES[currentRate]);
     radio.send(msg);
   }
