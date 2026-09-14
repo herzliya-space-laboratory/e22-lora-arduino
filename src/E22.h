@@ -13,7 +13,6 @@
 
 #include <Arduino.h>
 
-
 // The enums below follow the register bit fields in manual section 6.3.
 
 enum class E22Mode : uint8_t {
