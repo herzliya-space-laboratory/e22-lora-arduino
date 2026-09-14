@@ -12,7 +12,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <SoftwareSerial.h>
+
 
 // The enums below follow the register bit fields in manual section 6.3.
 
