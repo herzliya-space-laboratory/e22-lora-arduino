@@ -212,8 +212,10 @@ Tested on the bench on 2026-10-06 with two Arduino Unos and two E22-400T30D modu
 
 Not tested yet: the flight board itself (no AUX, SoftwareSerial on D2/D3), HardwareSerial, the
 ESP32, saving the configuration to flash (`C0`), timeouts with the module disconnected,
-receiving in wake-on-radio mode, listen-before-talk, relay, and transmit power above 21 dBm. The
-RF output has not been measured with a spectrum analyzer yet.
+receiving in wake-on-radio mode, listen-before-talk, relay, and transmit power above 21 dBm.
+
+In the lab, the module's transmission from a Uno showed up on a spectrum analyzer, so RF really
+leaves the antenna.
 
 The modules shipped with the registers `00 00 00 62 00 17 83 00 00`. Register 6 is `0x83`, not
 the documented `0x03`, so the RSSI byte is on from the factory.

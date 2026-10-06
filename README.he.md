@@ -224,7 +224,9 @@ arduino-cli compile --fqbn esp32:esp32:esp32 --library . examples/ReadConfig
 
 עוד לא נבדק: לוח הטיסה עצמו (בלי AUX, SoftwareSerial על D2/D3), HardwareSerial, ה-ESP32, שמירת
 התצורה בפלאש (`C0`), timeouts כשהמודול מנותק, קבלה במצב wake-on-radio, listen-before-talk,
-relay, והספק שידור מעל 21 dBm. יציאת ה-RF עוד לא נמדדה בנתח ספקטרום.
+relay, והספק שידור מעל 21 dBm.
+
+במעבדה ראינו בנתח ספקטרום את השידור של המודול מ-Uno, כלומר ה-RF באמת יוצא מהאנטנה.
 
 המודולים הגיעו עם הרגיסטרים `00 00 00 62 00 17 83 00 00`. רגיסטר 6 הוא `0x83`, לא `0x03` כמו
 בתיעוד, אז בייט ה-RSSI מופעל מהמפעל.
