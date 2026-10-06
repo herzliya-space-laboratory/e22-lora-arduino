@@ -1,4 +1,5 @@
-// Two boards, same sketch. Build one with ROLE_SENDER 1 and the other with 0.
+// Two boards, same sketch. Build one with ROLE_SENDER 1 and the other with 0
+// (edit the line below, or pass -DROLE_SENDER=0 from the command line).
 // The sender sends "PING n" every two seconds, the other board answers
 // "PONG n". Both print what they receive and the RSSI.
 //
@@ -7,7 +8,9 @@
 
 #include <E22.h>
 
+#ifndef ROLE_SENDER
 #define ROLE_SENDER 1
+#endif
 
 #if defined(ESP32)
 #define RADIO_SERIAL Serial2
@@ -18,7 +21,11 @@ constexpr int8_t PIN_RX = 16, PIN_TX = 17;
 constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
 constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #else
-#define RADIO_SERIAL Serial
+// Boards with one UART (Arduino Uno). Serial stays free for the debug prints
+// and the radio goes on SoftwareSerial: D10 <- TXD, D11 -> RXD.
+#include <SoftwareSerial.h>
+SoftwareSerial radioSerial(10, 11);  // RX, TX
+#define RADIO_SERIAL radioSerial
 constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
 constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #endif
@@ -51,12 +58,21 @@ void setup() {
   cfg.netId = 0;
   cfg.airRate = E22AirRate::Rate2k4;
   cfg.rssiByte = true;
-  if (!radio.writeConfig(cfg)) DEBUG.println(F("writeConfig() failed"));
+  // Lowest power. Two modules a metre apart at 30 dBm overload each other's
+  // receiver, and 30 dBm draws more current than a USB-powered Uno can give.
+  cfg.txPower = E22TxPower::Level3;
+  // Temporary (C2): the module's flash keeps its own settings.
+  if (!radio.writeConfig(cfg, false)) DEBUG.println(F("writeConfig() failed"));
 }
 
 void handleLine(const char* text, int rssiDbm) {
   DEBUG.print(F("rx  \"")); DEBUG.print(text);
-  DEBUG.print(F("\"  rssi ")); DEBUG.print(rssiDbm); DEBUG.println(F(" dBm"));
+  DEBUG.print(F("\"  rssi "));
+  if (rssiDbm == 0) {
+    DEBUG.println(F("n/a"));  // no valid reading, see E22::rssiByteToDbm
+  } else {
+    DEBUG.print(rssiDbm); DEBUG.println(F(" dBm"));
+  }
 #if !ROLE_SENDER
   if (strncmp(text, "PING ", 5) == 0) {
     char reply[24];

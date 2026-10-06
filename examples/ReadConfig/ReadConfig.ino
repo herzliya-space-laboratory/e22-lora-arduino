@@ -18,7 +18,11 @@ constexpr int8_t PIN_RX = 16, PIN_TX = 17;
 constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
 constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #else
-#define RADIO_SERIAL Serial   // single-UART boards: radio and debug share it
+// Boards with one UART (Arduino Uno). Serial stays free for the debug prints
+// and the radio goes on SoftwareSerial: D10 <- TXD, D11 -> RXD.
+#include <SoftwareSerial.h>
+SoftwareSerial radioSerial(10, 11);  // RX, TX
+#define RADIO_SERIAL radioSerial
 constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
 constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #endif

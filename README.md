@@ -100,6 +100,9 @@ Run them in this order on a new board:
    done with the air rate. Both boards go through the six rates in sync, starting from boot.
 
 Each example has a block at the top that selects the serial port and the pins for each target.
+On a board with one UART (Arduino Uno) the radio goes on SoftwareSerial, D10 <- TXD and
+D11 -> RXD, with M0 on D4, M1 on D5 and AUX on D6. The driver takes either a HardwareSerial
+or a SoftwareSerial.
 The ATmega pin numbers there are placeholders until we have the schematic.
 
 ### API
@@ -130,6 +133,13 @@ For the flight board you need MiniCore, which adds the ATmega328PB:
 arduino-cli config add board_manager.additional_urls https://mcudude.github.io/MiniCore/package_MCUdude_MiniCore_index.json
 arduino-cli core install MiniCore:avr
 arduino-cli compile --fqbn MiniCore:avr:328:variant=modelPB,clock=16MHz_external --library . examples/ReadConfig
+```
+
+For an Arduino Uno on the bench:
+
+```
+arduino-cli core install arduino:avr
+arduino-cli compile --fqbn arduino:avr:uno --library . examples/ReadConfig
 ```
 
 For an ESP32 on the bench:
