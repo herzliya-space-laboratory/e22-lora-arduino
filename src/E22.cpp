@@ -78,10 +78,6 @@ uint32_t E22Config::uartBaudValue() const {
 // ---------------------------------------------------------------------------
 // E22
 
-E22::E22(HardwareSerial& uart, int8_t pinM0, int8_t pinM1, int8_t pinAux,
-         int8_t pinReset)
-    : uart_(uart), pinM0_(pinM0), pinM1_(pinM1), pinAux_(pinAux), pinReset_(pinReset) {}
-
 bool E22::begin(uint32_t uartBaud, int8_t rxPin, int8_t txPin) {
   uartBaud_ = uartBaud;
   rxPin_ = rxPin;
@@ -104,12 +100,7 @@ bool E22::begin(uint32_t uartBaud, int8_t rxPin, int8_t txPin) {
 }
 
 void E22::openSerial(uint32_t baud) {
-  uart_.end();
-#if defined(ESP32)
-  uart_.begin(baud, SERIAL_8N1, rxPin_, txPin_);
-#else
-  uart_.begin(baud);
-#endif
+  reopen_(port_, baud, rxPin_, txPin_);
   uart_.setTimeout(20);
 }
 
@@ -350,7 +341,10 @@ bool E22::atCommand(const char* cmd, char* reply, size_t replyLen, uint32_t time
   reply[n] = '\0';
 
   leaveConfig(prev);
-  return gotAny && strstr(reply, "ERR") == nullptr;
+  // Firmware 7453-0-21 answers an unknown command with FF FF FF.
+  bool rejected = n >= 3 && (uint8_t)reply[0] == kErrByte &&
+                  (uint8_t)reply[1] == kErrByte && (uint8_t)reply[2] == kErrByte;
+  return gotAny && !rejected && strstr(reply, "ERR") == nullptr;
 }
 
 bool E22::readFirmwareVersion(char* buf, size_t len) {
