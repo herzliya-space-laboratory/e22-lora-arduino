@@ -12,7 +12,9 @@
 
 #include <E22.h>
 
+#ifndef ROLE_SENDER
 #define ROLE_SENDER 1
+#endif
 
 constexpr uint32_t DWELL_MS = 10000;
 constexpr uint32_t BEACON_MS = 1000;
@@ -21,9 +23,14 @@ constexpr uint32_t BEACON_MS = 1000;
 #define RADIO_SERIAL Serial2
 constexpr int8_t PIN_M0 = 32, PIN_M1 = 33, PIN_AUX = 34, PIN_RESET = 27;
 constexpr int8_t PIN_RX = 16, PIN_TX = 17;
-#elif defined(HAVE_HWSERIAL1)
-#define RADIO_SERIAL Serial1  // ATmega328PB USART1: PB4 = RXD1, PB3 = TXD1
-constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
+#elif defined(__AVR_ATmega328PB__)
+// Flight board (ISC), module on J3: PD2 <- TXD, PD3 -> RXD through a divider,
+// PB0 -> M0, PE3 -> M1. PD2/PD3 are not a hardware UART, so SoftwareSerial.
+// AUX is not wired to the MCU, so the driver uses fixed delays.
+#include <SoftwareSerial.h>
+SoftwareSerial radioSerial(2, 3);  // RX, TX
+#define RADIO_SERIAL radioSerial
+constexpr int8_t PIN_M0 = 8, PIN_M1 = 26, PIN_AUX = -1, PIN_RESET = -1;  // 26 = PE3
 constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #else
 // Boards with one UART (Arduino Uno). Serial stays free for the debug prints

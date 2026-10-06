@@ -1,8 +1,8 @@
 # E22 LoRa UART
 
 Arduino driver for the Ebyte E22 UART LoRa modules. We use it on the satellite communication
-card, which has an ATmega328PB and an E22-400T30D. It also works on an ESP32, which is easier
-to use on the bench.
+card, which has an ATmega328PB and an E22-400T30D. On the bench it runs on an Arduino Uno, and it
+also builds for an ESP32.
 
 This is only the module driver. The beacon and transponder logic that runs on the satellite is a
 separate sketch that uses this library.
@@ -58,8 +58,11 @@ Some facts about the module that affect the design:
 
 ```cpp
 #include <E22.h>
+#include <SoftwareSerial.h>
 
-E22 radio(Serial1, 4, 5, 6);   // serial port, M0, M1, AUX. Optional 5th argument: RESET pin.
+// Flight board: module on D2/D3, M0 on D8, M1 on D26 (PE3), AUX not connected.
+SoftwareSerial radioSerial(2, 3);      // RX, TX
+E22 radio(radioSerial, 8, 26, -1);     // port, M0, M1, AUX. Optional 5th argument: RESET pin.
 
 void setup() {
   Serial.begin(115200);
@@ -98,10 +101,24 @@ Run them in this order on a new board:
    done with the air rate. Both boards go through the six rates in sync, starting from boot.
 
 Each example has a block at the top that selects the serial port and the pins for each target.
-On a board with one UART (Arduino Uno) the radio goes on SoftwareSerial, D10 <- TXD and
-D11 -> RXD, with M0 on D4, M1 on D5 and AUX on D6. The driver takes either a HardwareSerial
-or a SoftwareSerial.
-The ATmega pin numbers there are placeholders until we have the schematic.
+The driver takes either a HardwareSerial or a SoftwareSerial.
+
+| Target | Radio serial | M0 | M1 | AUX |
+|--------|--------------|----|----|-----|
+| ATmega328PB flight board (J3, from the schematic) | SoftwareSerial, D2 <- TXD, D3 -> RXD | D8 (PB0) | D26 (PE3) | not connected |
+| Arduino Uno (bench) | SoftwareSerial, D10 <- TXD, D11 -> RXD | D4 | D5 | D6 |
+| ESP32 (bench) | Serial2, GPIO16 <- TXD, GPIO17 -> RXD | GPIO32 | GPIO33 | GPIO34 |
+
+Debug output goes to `Serial` at 115200 on every target. On the Uno, keep D0 and D1 free:
+anything wired there blocks uploads.
+
+PingPong and AirRateSweep need one board built as the sender and one as the receiver. Edit
+`ROLE_SENDER` at the top, or set it from the command line:
+
+```
+arduino-cli compile -u -p /dev/cu.usbmodemXXXX --fqbn arduino:avr:uno --library . \
+  --build-property "compiler.cpp.extra_flags=-DROLE_SENDER=0" examples/PingPong
+```
 
 ### API
 
@@ -113,12 +130,12 @@ The ATmega pin numbers there are placeholders until we have the schematic.
 | `hardReset()` | pulses RESET, if a RESET pin was given. The DIP module has no RESET pin. |
 | `readConfig(cfg)` / `writeConfig(cfg, persist)` | all nine registers. `persist=false` uses `C2`, so the change is lost after a power cycle. |
 | `setChannel`, `setAirRate`, `setTxPower`, `setAddress`, `setRssiByte`, `setAmbientRssi` | change one field |
-| `atCommand(cmd, reply, len)`, `readFirmwareVersion(buf, len)` | AT commands, in configuration mode |
+| `atCommand(cmd, reply, len)`, `readFirmwareVersion(buf, len)` | AT commands, in configuration mode. `false` if the module rejects the command (`FF FF FF` or `ERR`). |
 | `send(buf, len)`, `send("text")` | sends in chunks of the packet size, waits for AUX between chunks |
 | `sendTo(addr, ch, buf, len)` | adds the fixed-point header. Needs `cfg.fixedPoint`. |
 | `available()`, `read()`, `readByte()`, `flushInput()` | raw bytes from the module |
 | `readAmbientRssi(dbm)`, `readLastPacketRssi(dbm)` | need `cfg.ambientRssi`, only in transmission mode |
-| `E22::rssiByteToDbm(b)` | converts the RSSI byte to dBm |
+| `E22::rssiByteToDbm(b)` | converts the RSSI byte to dBm. A byte of 0 is not a valid reading and gives 0. |
 
 Power levels: `E22TxPower::Level0` is the maximum on every module. `dBm30`..`dBm21` and
 `dBm22`..`dBm10` are names for the same four codes on the 30 dBm and 22 dBm modules.
@@ -148,14 +165,23 @@ arduino-cli core install esp32:esp32
 arduino-cli compile --fqbn esp32:esp32:esp32 --library . examples/ReadConfig
 ```
 
-CI compiles the examples for both targets on every push.
+CI compiles every example for the ATmega328PB, the Uno and the ESP32 on every push.
 
 ## Notes and limitations
 
 - The ATmega has 2 KB of RAM. Use small buffers, put string literals in `F()`, do not use
   `printf`.
-- The ATmega runs at 5 V and the module inputs are 3.3 V. The board must level-shift RXD, M0
-  and M1. The schematic seems to have series resistors on these lines. Not confirmed yet.
+- The ATmega runs at 5 V and the module's RXD is 3.3 V logic. On the flight board RXD goes
+  through a 1.3k / 2.7k divider (about 3.4 V). M0 and M1 are driven at 5 V directly, and that
+  worked on the bench. Use the same divider on RXD when wiring a Uno.
+- AUX is not wired to the MCU on the flight board, so the driver uses fixed delays instead of
+  waiting for AUX (about 12 ms per wait, about 26 ms per mode switch). This has not been tested
+  on hardware yet; the bench tests all had AUX connected.
+- With `rssiByte` on, the module adds the RSSI byte after every radio packet. A message longer
+  than the packet size (240 bytes by default) arrives with an RSSI byte after each 240 bytes,
+  not only at the end. The framing code must allow for this.
+- A temporary (`C2`) configuration lives in the module's RAM. Resetting the MCU does not clear
+  it; only a power cycle of the module does.
 - Configuration mode is always 9600 8N1. If the UART runs at another speed, the driver reopens
   the port before and after every configuration call.
 - If AUX is held low while the module powers up, the module enters firmware upgrade mode and
@@ -168,10 +194,29 @@ CI compiles the examples for both targets on every push.
 
 ## Status
 
-Compiles for both targets. Not tested on real hardware yet. Written from the manual, and the
-byte layouts were compared with Renzo Mischianti's
-[E22 library](https://github.com/xreef/EByte_LoRa_E22_Series_Library). The first test on a real
-board: run `ReadConfig` and check that the factory values `00 00 00 62 00 17 03 00 00` come
-back, then record the firmware version.
+Tested on the bench on 2026-10-06 with two Arduino Unos and two E22-400T30D modules (firmware
+7453-0-21), radio on SoftwareSerial, at up to 21 dBm. What passed:
+
+- reading and writing the configuration with read-back, every `set...` call, AT commands
+- all six air rates in both directions, 120 of 120 packets delivered
+- a different air rate, channel or network ID on the two modules: nothing received
+- addresses: a different address receives nothing; sending from 0xFFFF or listening on 0xFFFF
+  receives everything
+- fixed-point `sendTo()`: arrives with the 3-byte header removed, wrong address or channel
+  receives nothing
+- a 300-byte message, split into packets of 240 and of 32 bytes
+- sleep and configuration modes receive nothing; `send()` refuses in sleep and wake-on-radio
+- UART speeds of 19200 and 38400, including the switch to 9600 for configuration
+
+Not tested yet: the flight board itself (no AUX, SoftwareSerial on D2/D3), HardwareSerial, the
+ESP32, saving the configuration to flash (`C0`), timeouts with the module disconnected,
+receiving in wake-on-radio mode, listen-before-talk, relay, and transmit power above 21 dBm. The
+RF output has not been measured with a spectrum analyzer yet.
+
+The modules shipped with the registers `00 00 00 62 00 17 83 00 00`. Register 6 is `0x83`, not
+the documented `0x03`, so the RSSI byte is on from the factory.
+
+The byte layouts were also compared with Renzo Mischianti's
+[E22 library](https://github.com/xreef/EByte_LoRa_E22_Series_Library).
 
 MIT license.
