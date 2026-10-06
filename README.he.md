@@ -5,8 +5,8 @@
 [English](README.md)
 
 ספריית ארדואינו למודולי ה-LoRa של Ebyte מסדרת E22 עם ממשק UART. אנחנו משתמשים בה בכרטיס
-התקשורת של הלוויין, שיש בו ATmega328PB ומודול E22-400T30D. היא עובדת גם על ESP32, שנוח יותר
-לעבודה על השולחן.
+התקשורת של הלוויין, שיש בו ATmega328PB ומודול E22-400T30D. על השולחן היא רצה על Arduino Uno, והיא
+מתקמפלת גם ל-ESP32.
 
 זה רק הדרייבר של המודול. הלוגיקה של הביקון והמשיב שרצה על הלוויין היא sketch נפרד שמשתמש
 בספרייה הזאת.
@@ -61,8 +61,11 @@
 
 ```cpp
 #include <E22.h>
+#include <SoftwareSerial.h>
 
-E22 radio(Serial1, 4, 5, 6);   // serial port, M0, M1, AUX. Optional 5th argument: RESET pin.
+// Flight board: module on D2/D3, M0 on D8, M1 on D26 (PE3), AUX not connected.
+SoftwareSerial radioSerial(2, 3);      // RX, TX
+E22 radio(radioSerial, 8, 26, -1);     // port, M0, M1, AUX. Optional 5th argument: RESET pin.
 
 void setup() {
   Serial.begin(115200);
@@ -100,8 +103,29 @@ void loop() {
 3. `AirRateSweep` הוא ניסוי "שינוי SF כל 10 שניות" מהמסמך של הפרויקט, עם קצב אוויר במקום.
    שני הלוחות עוברים על ששת הקצבים בסנכרון, מרגע ההדלקה.
 
-בכל דוגמה יש בהתחלה בלוק שבוחר את הפורט הטורי ואת הפינים לכל יעד. מספרי הפינים של ה-ATmega
-שם הם ערכי מקום עד שתהיה לנו הסכמה.
+בכל דוגמה יש בהתחלה בלוק שבוחר את הפורט הטורי ואת הפינים לכל יעד. הדרייבר מקבל HardwareSerial
+או SoftwareSerial.
+
+| יעד | פורט טורי לרדיו | M0 | M1 | AUX |
+|-----|-----------------|----|----|-----|
+| לוח הטיסה ATmega328PB (J3, לפי הסכמה) | SoftwareSerial, ‏D2 ← TXD, ‏D3 → RXD | D8 (PB0) | D26 (PE3) | לא מחובר |
+| Arduino Uno (שולחן) | SoftwareSerial, ‏D10 ← TXD, ‏D11 → RXD | D4 | D5 | D6 |
+| ESP32 (שולחן) | Serial2, ‏GPIO16 ← TXD, ‏GPIO17 → RXD | GPIO32 | GPIO33 | GPIO34 |
+
+פלט הדיבאג יוצא ל-`Serial` ב-115200 בכל היעדים. ב-Uno להשאיר את D0 ו-D1 פנויים: כל דבר שמחובר
+אליהם חוסם צריבה.
+
+ל-PingPong ול-AirRateSweep צריך לוח אחד שנבנה כשולח ואחד כמקבל. לשנות את `ROLE_SENDER`
+בהתחלה, או לקבוע אותו משורת הפקודה:
+
+<div dir="ltr">
+
+```
+arduino-cli compile -u -p /dev/cu.usbmodemXXXX --fqbn arduino:avr:uno --library . \
+  --build-property "compiler.cpp.extra_flags=-DROLE_SENDER=0" examples/PingPong
+```
+
+</div>
 
 ### API
 
@@ -113,12 +137,12 @@ void loop() {
 | `hardReset()` | נותן פולס ל-RESET, אם ניתן פין RESET. למודול ה-DIP אין פין RESET. |
 | `readConfig(cfg)` / `writeConfig(cfg, persist)` | כל תשעת הרגיסטרים. `persist=false` משתמש ב-`C2`, אז השינוי נמחק אחרי כיבוי. |
 | `setChannel`, `setAirRate`, `setTxPower`, `setAddress`, `setRssiByte`, `setAmbientRssi` | שינוי של שדה אחד |
-| `atCommand(cmd, reply, len)`, `readFirmwareVersion(buf, len)` | פקודות AT, במצב תצורה |
+| `atCommand(cmd, reply, len)`, `readFirmwareVersion(buf, len)` | פקודות AT, במצב תצורה. `false` אם המודול דוחה את הפקודה (`FF FF FF` או `ERR`). |
 | `send(buf, len)`, `send("text")` | שולח בחלקים בגודל פקטה, מחכה ל-AUX בין החלקים |
 | `sendTo(addr, ch, buf, len)` | מוסיף את הכותרת של מצב fixed-point. דורש `cfg.fixedPoint`. |
 | `available()`, `read()`, `readByte()`, `flushInput()` | בייטים גולמיים מהמודול |
 | `readAmbientRssi(dbm)`, `readLastPacketRssi(dbm)` | דורשים `cfg.ambientRssi`, רק במצב שידור |
-| `E22::rssiByteToDbm(b)` | ממיר את בייט ה-RSSI ל-dBm |
+| `E22::rssiByteToDbm(b)` | ממיר את בייט ה-RSSI ל-dBm. בייט 0 הוא לא מדידה תקפה ומחזיר 0. |
 
 רמות הספק: `E22TxPower::Level0` היא המקסימום בכל מודול. `dBm30`..`dBm21` ו-`dBm22`..`dBm10` הם
 שמות לאותם ארבעה קודים במודולים של 30 dBm ו-22 dBm.
@@ -137,6 +161,17 @@ arduino-cli compile --fqbn MiniCore:avr:328:variant=modelPB,clock=16MHz_external
 
 </div>
 
+ל-Arduino Uno על השולחן:
+
+<div dir="ltr">
+
+```
+arduino-cli core install arduino:avr
+arduino-cli compile --fqbn arduino:avr:uno --library . examples/ReadConfig
+```
+
+</div>
+
 ל-ESP32 על השולחן:
 
 <div dir="ltr">
@@ -149,13 +184,22 @@ arduino-cli compile --fqbn esp32:esp32:esp32 --library . examples/ReadConfig
 
 </div>
 
-ה-CI מקמפל את הדוגמאות לשני היעדים בכל push.
+ה-CI מקמפל כל דוגמה ל-ATmega328PB, ל-Uno ול-ESP32 בכל push.
 
 ## הערות ומגבלות
 
 - ל-ATmega יש 2KB של RAM. להשתמש בבאפרים קטנים, לשים מחרוזות ב-`F()`, לא להשתמש ב-`printf`.
-- ה-ATmega עובד ב-5V והכניסות של המודול הן 3.3V. הלוח חייב לעשות level shifting ל-RXD, M0 ו-M1.
-  נראה שבסכמה יש נגדים טוריים על הקווים האלה. עדיין לא אושר.
+- ה-ATmega עובד ב-5V וה-RXD של המודול הוא לוגיקה של 3.3V. בלוח הטיסה RXD עובר דרך מחלק מתח
+  של 1.3k / 2.7k (בערך 3.4V). M0 ו-M1 מקבלים 5V ישירות, וזה עבד על השולחן. כשמחווטים Uno, לשים
+  את אותו מחלק על RXD.
+- בלוח הטיסה AUX לא מחובר למיקרו-בקר, אז הדרייבר מחכה זמנים קבועים במקום לחכות ל-AUX (בערך
+  12ms לכל המתנה, בערך 26ms להחלפת מצב). זה עוד לא נבדק על חומרה; בכל הבדיקות על השולחן AUX
+  היה מחובר.
+- כש-`rssiByte` מופעל, המודול מוסיף את בייט ה-RSSI אחרי כל פקטת רדיו. הודעה ארוכה מגודל הפקטה
+  (240 בייט כברירת מחדל) מגיעה עם בייט RSSI אחרי כל 240 בייט, לא רק בסוף. קוד המסגור צריך
+  להתחשב בזה.
+- תצורה זמנית (`C2`) נשמרת ב-RAM של המודול. איפוס של המיקרו-בקר לא מוחק אותה; רק כיבוי והדלקה
+  של המודול.
 - מצב תצורה הוא תמיד 9600 8N1. אם ה-UART רץ במהירות אחרת, הדרייבר פותח מחדש את הפורט לפני
   ואחרי כל קריאת תצורה.
 - אם AUX מוחזק LOW בזמן שהמודול נדלק, המודול נכנס למצב עדכון קושחה ומפסיק להגיב. אף פעם לא
@@ -166,10 +210,27 @@ arduino-cli compile --fqbn esp32:esp32:esp32 --library . examples/ReadConfig
 
 ## מצב
 
-מתקמפל לשני היעדים. עדיין לא נבדק על חומרה אמיתית. נכתב לפי המדריך, ופריסת הבייטים הושוותה
-מול [הספרייה ל-E22](https://github.com/xreef/EByte_LoRa_E22_Series_Library) של Renzo Mischianti.
-הבדיקה הראשונה על לוח אמיתי: להריץ `ReadConfig` ולבדוק שערכי המפעל `00 00 00 62 00 17 03 00 00`
-חוזרים, ואז לרשום את גרסת הקושחה.
+נבדק על השולחן ב-2026-10-06 עם שני Arduino Uno ושני מודולי E22-400T30D (קושחה 7453-0-21),
+הרדיו על SoftwareSerial, עד 21 dBm. מה עבר:
+
+- קריאה וכתיבה של התצורה עם קריאה חוזרת, כל קריאות ה-`set...`, פקודות AT
+- כל ששת קצבי האוויר בשני הכיוונים, 120 מתוך 120 פקטות הגיעו
+- קצב אוויר, ערוץ או מזהה רשת שונים בשני המודולים: לא מתקבל כלום
+- כתובות: כתובת שונה לא מקבלת כלום; שליחה מ-0xFFFF או האזנה על 0xFFFF מקבלת הכול
+- `sendTo()` במצב fixed-point: מגיע בלי כותרת 3 הבייטים, כתובת או ערוץ שגויים לא מקבלים כלום
+- הודעה של 300 בייט, מחולקת לפקטות של 240 ושל 32 בייט
+- במצבי שינה ותצורה לא מתקבל כלום; `send()` מסרבת במצב שינה וב-wake-on-radio
+- מהירויות UART של 19200 ו-38400, כולל המעבר ל-9600 בשביל תצורה
+
+עוד לא נבדק: לוח הטיסה עצמו (בלי AUX, SoftwareSerial על D2/D3), HardwareSerial, ה-ESP32, שמירת
+התצורה בפלאש (`C0`), timeouts כשהמודול מנותק, קבלה במצב wake-on-radio, listen-before-talk,
+relay, והספק שידור מעל 21 dBm. יציאת ה-RF עוד לא נמדדה בנתח ספקטרום.
+
+המודולים הגיעו עם הרגיסטרים `00 00 00 62 00 17 83 00 00`. רגיסטר 6 הוא `0x83`, לא `0x03` כמו
+בתיעוד, אז בייט ה-RSSI מופעל מהמפעל.
+
+פריסת הבייטים הושוותה גם מול [הספרייה ל-E22](https://github.com/xreef/EByte_LoRa_E22_Series_Library)
+של Renzo Mischianti.
 
 רישיון MIT.
 

@@ -2,10 +2,11 @@
 // Run this first on a new board. If the values are correct, the wiring and
 // the baud rate are correct.
 //
-// On the flight board (ATmega328PB, module on J3) the pin numbers below are
-// placeholders until we have the schematic. On the ESP32 bench setup:
-// GPIO17 -> RXD, GPIO16 <- TXD, GPIO32 -> M0, GPIO33 -> M1, GPIO34 <- AUX,
-// GPIO27 -> RESET if the module has one (the DIP module does not).
+// The pins for each target are in the block below: the flight board
+// (ATmega328PB, module on J3, pins from the schematic), an Arduino Uno and an
+// ESP32 on the bench. On the ESP32: GPIO17 -> RXD, GPIO16 <- TXD,
+// GPIO32 -> M0, GPIO33 -> M1, GPIO34 <- AUX, GPIO27 -> RESET if the module
+// has one (the DIP module does not).
 
 #include <E22.h>
 
@@ -13,9 +14,14 @@
 #define RADIO_SERIAL Serial2
 constexpr int8_t PIN_M0 = 32, PIN_M1 = 33, PIN_AUX = 34, PIN_RESET = 27;
 constexpr int8_t PIN_RX = 16, PIN_TX = 17;
-#elif defined(HAVE_HWSERIAL1)
-#define RADIO_SERIAL Serial1  // ATmega328PB USART1: PB4 = RXD1, PB3 = TXD1
-constexpr int8_t PIN_M0 = 4, PIN_M1 = 5, PIN_AUX = 6, PIN_RESET = -1;
+#elif defined(__AVR_ATmega328PB__)
+// Flight board (ISC), module on J3: PD2 <- TXD, PD3 -> RXD through a divider,
+// PB0 -> M0, PE3 -> M1. PD2/PD3 are not a hardware UART, so SoftwareSerial.
+// AUX is not wired to the MCU, so the driver uses fixed delays.
+#include <SoftwareSerial.h>
+SoftwareSerial radioSerial(2, 3);  // RX, TX
+#define RADIO_SERIAL radioSerial
+constexpr int8_t PIN_M0 = 8, PIN_M1 = 26, PIN_AUX = -1, PIN_RESET = -1;  // 26 = PE3
 constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #else
 // Boards with one UART (Arduino Uno). Serial stays free for the debug prints
