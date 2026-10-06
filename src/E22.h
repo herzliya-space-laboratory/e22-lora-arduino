@@ -92,8 +92,15 @@ class E22 {
   // Pass -1 for a pin that is not connected. M0 and M1 are needed to
   // configure the module. AUX is optional; without it the driver uses fixed
   // delays. The DIP modules have no RESET pin.
-  E22(HardwareSerial& uart, int8_t pinM0, int8_t pinM1, int8_t pinAux,
-      int8_t pinReset = -1);
+  //
+  // uart can be a HardwareSerial or a SoftwareSerial (any Stream that also
+  // has begin(baud) and end()). The flight board has the module on PD2/PD3,
+  // which is not a hardware UART, so it needs SoftwareSerial. This header
+  // does not include SoftwareSerial; the sketch does, if it needs it.
+  template <typename SerialT>
+  E22(SerialT& uart, int8_t pinM0, int8_t pinM1, int8_t pinAux, int8_t pinReset = -1)
+      : uart_(uart), port_(&uart), reopen_(&reopenPort<SerialT>),
+        pinM0_(pinM0), pinM1_(pinM1), pinAux_(pinAux), pinReset_(pinReset) {}
 
   // Sets up the pins, opens the port at uartBaud (must match the baud rate
   // stored in the module, factory 9600) and enters transmission mode.
@@ -146,6 +153,9 @@ class E22 {
   bool readAmbientRssi(int& dbm);
   bool readLastPacketRssi(int& dbm);
 
+  // The RSSI byte after a packet, in dBm. A byte of 0 is not a valid reading
+  // and gives 0. On the bench it shows up when the two modules are so close
+  // that the receiver is overloaded.
   static int rssiByteToDbm(uint8_t b) { return b == 0 ? 0 : -(256 - (int)b); }
 
   // The last configuration that was read or written.
@@ -166,7 +176,24 @@ class E22 {
   void openSerial(uint32_t baud);
   void driveModePins(E22Mode mode);
 
-  HardwareSerial& uart_;
+  // begin() and end() are not part of Stream, so the constructor keeps a
+  // function that knows the real port type.
+  template <typename SerialT>
+  static void reopenPort(void* port, uint32_t baud, int8_t rxPin, int8_t txPin) {
+    SerialT* s = static_cast<SerialT*>(port);
+    s->end();
+#if defined(ESP32)
+    s->begin(baud, SERIAL_8N1, rxPin, txPin);
+#else
+    (void)rxPin;
+    (void)txPin;
+    s->begin(baud);
+#endif
+  }
+
+  Stream& uart_;
+  void* port_;
+  void (*reopen_)(void*, uint32_t, int8_t, int8_t);
   int8_t pinM0_, pinM1_, pinAux_, pinReset_;
   int8_t rxPin_ = -1, txPin_ = -1;
   uint32_t uartBaud_ = 9600;

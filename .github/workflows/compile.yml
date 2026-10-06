@@ -22,6 +22,20 @@ jobs:
             - examples
           verbose: false
 
+  uno:
+    name: Arduino Uno (bench, SoftwareSerial)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/compile-sketches@v1
+        with:
+          fqbn: arduino:avr:uno
+          libraries: |
+            - source-path: ./
+          sketch-paths: |
+            - examples
+          verbose: false
+
   esp32:
     name: ESP32 (bench)
     runs-on: ubuntu-latest
