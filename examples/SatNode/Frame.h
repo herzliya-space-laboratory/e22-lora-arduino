@@ -77,3 +77,42 @@ bool isBroadcast(const char call[kCallLen]);
 bool isStation(const char call[kCallLen]);  // 3..6 letters and digits, at least one digit
 bool isIsraeli(const char call[kCallLen]);  // starts with 4X or 4Z
 
+// Finds frames in the bytes from the module. The module does not keep packet
+// boundaries on the serial side, and with the RSSI byte enabled it adds one
+// byte after every packet, so the parser looks for the sync bytes, collects
+// one frame, checks the CRC and then takes the RSSI byte.
+class Parser {
+ public:
+  void setExpectRssi(bool on) { expectRssi_ = on; }
+
+  // Returns true when a frame is complete; read it with frame() and
+  // rssiByte() before feeding more bytes.
+  bool feed(uint8_t b, uint32_t nowMs);
+  // Call from the main loop. Drops half a frame after a gap of kGapMs, and
+  // hands over a good frame whose RSSI byte never came (returns true).
+  bool expire(uint32_t nowMs);
+  void reset();
+
+  bool busy() const { return state_ != State::Sync0; }  // inside a frame
+  const Frame& frame() const { return frame_; }
+  uint8_t rssiByte() const { return rssi_; }  // 0 = no reading
+  uint16_t dropped() const { return dropped_; }  // bad CRC, bad header, cut off
+
+  static constexpr uint32_t kGapMs = 100;
+
+ private:
+  enum class State : uint8_t { Sync0, Sync1, Body, Rssi };
+  bool check();
+  void resync();
+
+  uint8_t buf_[kMaxFrameLen];
+  uint8_t n_ = 0;
+  State state_ = State::Sync0;
+  bool expectRssi_ = false;
+  uint8_t rssi_ = 0;
+  uint16_t dropped_ = 0;
+  uint32_t lastMs_ = 0;
+  Frame frame_;
+};
+
+}  // namespace sat
