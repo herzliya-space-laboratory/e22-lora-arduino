@@ -42,3 +42,38 @@ constexpr size_t kCrcLen = 2;
 constexpr size_t kMaxFrameLen = kHeaderLen + kMaxPayload + kCrcLen;
 constexpr uint8_t kMaxHops = 7;     // frames claiming more are dropped
 
+enum class FrameType : uint8_t {
+  Beacon = 1,   // status of the sender, see Node.h for the payload
+  Message = 2,  // text from a station, to one station or to ALL
+  Ack = 3,      // the destination got a message. Payload: its boot, seq
+};
+
+struct Frame {
+  FrameType type;
+  uint8_t hops;
+  char origin[kCallLen];
+  char sender[kCallLen];
+  char dest[kCallLen];
+  uint16_t boot;
+  uint16_t seq;
+  uint8_t len;
+  uint8_t payload[kMaxPayload];
+};
+
+uint16_t crc16(const uint8_t* data, size_t len);
+
+// Writes the frame to out. Returns the number of bytes, or 0 if out is too
+// small or the payload too long.
+size_t encode(const Frame& f, uint8_t* out, size_t outLen);
+// in must hold exactly one frame. Checks sync, version, type, length and CRC.
+bool decode(const uint8_t* in, size_t len, Frame& f);
+
+// Callsigns. "text" is a C string, the 6-byte form is padded with spaces.
+extern const char kBroadcast[kCallLen];  // "ALL"
+bool setCall(char out[kCallLen], const char* text);  // false if not 1..6 letters/digits
+void callToString(const char call[kCallLen], char out[kCallLen + 1]);
+bool callEquals(const char a[kCallLen], const char b[kCallLen]);
+bool isBroadcast(const char call[kCallLen]);
+bool isStation(const char call[kCallLen]);  // 3..6 letters and digits, at least one digit
+bool isIsraeli(const char call[kCallLen]);  // starts with 4X or 4Z
+
