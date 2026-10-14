@@ -69,3 +69,52 @@ bool decode(const uint8_t* in, size_t len, Frame& f) {
   return true;
 }
 
+bool setCall(char out[kCallLen], const char* text) {
+  char tmp[kCallLen];
+  size_t n = 0;
+  for (; text[n]; n++) {
+    if (n == kCallLen) return false;
+    char c = text[n];
+    if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+    if (!((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'))) return false;
+    tmp[n] = c;
+  }
+  if (n == 0) return false;
+  for (size_t i = n; i < kCallLen; i++) tmp[i] = ' ';
+  memcpy(out, tmp, kCallLen);
+  return true;
+}
+
+void callToString(const char call[kCallLen], char out[kCallLen + 1]) {
+  size_t n = 0;
+  while (n < kCallLen && call[n] != ' ') {
+    out[n] = call[n];
+    n++;
+  }
+  out[n] = '\0';
+}
+
+bool callEquals(const char a[kCallLen], const char b[kCallLen]) {
+  return memcmp(a, b, kCallLen) == 0;
+}
+
+bool isBroadcast(const char call[kCallLen]) { return callEquals(call, kBroadcast); }
+
+bool isStation(const char call[kCallLen]) {
+  size_t n = 0;
+  bool digit = false, letter = false;
+  for (; n < kCallLen && call[n] != ' '; n++) {
+    char c = call[n];
+    if (c >= '0' && c <= '9') digit = true;
+    else if (c >= 'A' && c <= 'Z') letter = true;
+    else return false;
+  }
+  for (size_t i = n; i < kCallLen; i++)
+    if (call[i] != ' ') return false;
+  return n >= 3 && digit && letter;
+}
+
+bool isIsraeli(const char call[kCallLen]) {
+  return call[0] == '4' && (call[1] == 'X' || call[1] == 'Z');
+}
+
