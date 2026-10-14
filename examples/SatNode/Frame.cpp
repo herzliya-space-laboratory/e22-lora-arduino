@@ -118,3 +118,59 @@ bool isIsraeli(const char call[kCallLen]) {
   return call[0] == '4' && (call[1] == 'X' || call[1] == 'Z');
 }
 
+void Parser::reset() {
+  state_ = State::Sync0;
+  n_ = 0;
+}
+
+bool Parser::feed(uint8_t b, uint32_t nowMs) {
+  lastMs_ = nowMs;
+  switch (state_) {
+    case State::Sync0:
+      if (b == kSync0) {
+        buf_[0] = b;
+        n_ = 1;
+        state_ = State::Sync1;
+      }
+      return false;
+    case State::Sync1:
+      if (b == kSync1) {
+        buf_[1] = b;
+        n_ = 2;
+        state_ = State::Body;
+      } else if (b != kSync0) {
+        state_ = State::Sync0;
+      }
+      return false;
+    case State::Body:
+      buf_[n_++] = b;
+      return check();
+    case State::Rssi:
+      rssi_ = b;
+      state_ = State::Sync0;
+      return true;
+  }
+  return false;
+}
+
+bool Parser::expire(uint32_t nowMs) {
+  if (state_ == State::Sync0 || nowMs - lastMs_ < kGapMs) return false;
+  if (state_ == State::Rssi) {  // good frame, only the RSSI byte is missing
+    reset();
+    return true;
+  }
+  // Nothing more is coming, so what we have is not one frame. After a false
+  // sync a real frame can still be inside it.
+  if (state_ == State::Body) dropped_++;
+  while (state_ == State::Body) {
+    resync();
+    if (check()) return true;
+    if (state_ == State::Rssi) {
+      reset();
+      return true;
+    }
+  }
+  reset();
+  return false;
+}
+
