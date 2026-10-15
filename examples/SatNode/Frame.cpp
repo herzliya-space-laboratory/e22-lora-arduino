@@ -174,3 +174,60 @@ bool Parser::expire(uint32_t nowMs) {
   return false;
 }
 
+// Looks at what has been collected. Returns true when a whole frame is in and
+// no RSSI byte is expected; with an RSSI byte, feed() returns true one byte later.
+bool Parser::check() {
+  while (state_ == State::Body) {
+    if (n_ > 2 && ((buf_[2] >> 4) != kVersion || !validType(buf_[2] & 0x0F))) {
+      resync();
+      continue;
+    }
+    if (n_ < kHeaderLen) return false;
+    if (buf_[26] > kMaxPayload) {
+      resync();
+      continue;
+    }
+    size_t need = kHeaderLen + buf_[26] + kCrcLen;
+    if (n_ < need) return false;
+    if (!decode(buf_, need, frame_)) {
+      dropped_++;
+      resync();
+      continue;
+    }
+    rssi_ = 0;
+    if (!expectRssi_) {
+      reset();
+      return true;
+    }
+    if (n_ > need) {  // only after a resync: the RSSI byte is already here
+      rssi_ = buf_[need];
+      reset();
+      return true;
+    }
+    state_ = State::Rssi;
+    return false;
+  }
+  return false;
+}
+
+// The bytes collected so far are not a frame. A frame may still start inside
+// them (a false sync in noise or in someone else's data), so start again from
+// the next A5 5A instead of throwing everything away.
+void Parser::resync() {
+  for (uint8_t i = 1; i + 1 < n_; i++) {
+    if (buf_[i] == kSync0 && buf_[i + 1] == kSync1) {
+      memmove(buf_, buf_ + i, n_ - i);
+      n_ -= i;
+      return;  // still State::Body
+    }
+  }
+  if (n_ > 0 && buf_[n_ - 1] == kSync0) {
+    buf_[0] = kSync0;
+    n_ = 1;
+    state_ = State::Sync1;
+  } else {
+    reset();
+  }
+}
+
+}  // namespace sat
