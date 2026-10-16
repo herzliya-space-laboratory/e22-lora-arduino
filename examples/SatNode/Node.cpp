@@ -114,3 +114,63 @@ Rx Node::onReceive(const Frame& f, int8_t rssiDbm, uint32_t nowMs) {
   return result;
 }
 
+bool Node::send(const char dest[kCallLen], const uint8_t* data, uint8_t len, uint32_t nowMs,
+                uint16_t* seqOut) {
+  if (len > kMaxPayload || !(isBroadcast(dest) || isStation(dest))) return false;
+  Frame f;
+  makeFrame(f, FrameType::Message, dest, cfg_.hops);
+  memcpy(f.payload, data, len);
+  f.len = len;
+  queue(f, nowMs);
+  if (seqOut) *seqOut = f.seq;
+  return true;
+}
+
+bool Node::poll(uint32_t nowMs, Frame& out) {
+  if (sentAny_ && nowMs - lastTxMs_ < cfg_.minGapMs) return false;
+
+  Slot* next = nullptr;
+  for (Slot& s : store_) {
+    if (s.left == 0 || !reached(nowMs, s.dueMs)) continue;
+    if (!next || (int32_t)(s.dueMs - next->dueMs) < 0) next = &s;
+  }
+  if (next) {
+    out = next->frame;
+    next->left--;
+    next->dueMs = nowMs + cfg_.repeatIntervalMs + random(cfg_.repeatIntervalMs / 4 + 1);
+  } else if (cfg_.beacon && reached(nowMs, nextBeaconMs_)) {
+    makeFrame(out, FrameType::Beacon, kBroadcast, cfg_.beaconHops);
+    uint8_t* p = out.payload;
+    put32(p, ++beaconNumber_);
+    put32(p + 4, (nowMs - startMs_) / 1000);
+    put16(p + 8, boot_);
+    put16(p + 10, (uint16_t)(txCount_ + 1));  // this beacon included
+    put16(p + 12, rxCount_);
+    put16(p + 14, relayed_);
+    p[16] = stored();
+    p[17] = (uint8_t)lastRssi_;
+    out.len = kBeaconLen;
+    nextBeaconMs_ = nowMs + cfg_.beaconIntervalMs + random(cfg_.beaconIntervalMs / 10 + 1);
+  } else {
+    return false;
+  }
+
+  memcpy(out.sender, call_, kCallLen);
+  txCount_++;
+  lastTxMs_ = nowMs;
+  sentAny_ = true;
+  return true;
+}
+
+uint8_t Node::stored() const {
+  uint8_t n = 0;
+  for (const Slot& s : store_)
+    if (s.left) n++;
+  return n;
+}
+
+void Node::forgetSeen() {
+  memset(seen_, 0, sizeof seen_);
+  seenNext_ = 0;
+}
+
