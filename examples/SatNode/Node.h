@@ -68,3 +68,72 @@ struct BeaconInfo {
 constexpr uint8_t kBeaconLen = 18;
 bool decodeBeacon(const Frame& f, BeaconInfo& out);
 
+class Node {
+ public:
+  static constexpr uint8_t kSeenSize = 32;
+  static constexpr uint8_t kStoreSize = 4;
+
+  NodeConfig& config() { return cfg_; }
+  void begin(const char call[kCallLen], uint16_t boot, uint32_t seed, uint32_t nowMs);
+  void setCall(const char call[kCallLen]);
+  const char* call() const { return call_; }
+
+  // A frame from the parser. rssiDbm 0 = no reading.
+  Rx onReceive(const Frame& f, int8_t rssiDbm, uint32_t nowMs);
+  bool queued() const { return queued_; }    // the last onReceive() queued a relay
+  uint16_t ackedSeq() const { return ackedSeq_; }  // after Rx::AckForUs
+
+  // Queues a message, first transmission at the next poll(). dest is a
+  // station or kBroadcast. seqOut gets its sequence number.
+  bool send(const char dest[kCallLen], const uint8_t* data, uint8_t len, uint32_t nowMs,
+            uint16_t* seqOut = nullptr);
+
+  // Returns true and fills out if something should go on air now. The caller
+  // checks first that the radio is free (no bytes coming in).
+  bool poll(uint32_t nowMs, Frame& out);
+
+  uint8_t stored() const;
+  uint16_t boot() const { return boot_; }
+  uint16_t txCount() const { return txCount_; }
+  uint16_t rxCount() const { return rxCount_; }
+  uint16_t relayed() const { return relayed_; }
+  uint16_t duplicates() const { return duplicates_; }
+  void forgetSeen();  // for tests: what happens when the seen list overflows
+
+ private:
+  struct Slot {
+    Frame frame;
+    uint32_t dueMs;
+    uint8_t left;  // transmissions left, 0 = free slot
+  };
+
+  static uint32_t messageId(const char origin[kCallLen], uint16_t boot, uint16_t seq);
+  bool seen(uint32_t id) const;
+  void remember(uint32_t id);
+  void queue(const Frame& f, uint32_t dueMs);
+  void cancel(const char origin[kCallLen], uint16_t boot, uint16_t seq);
+  void upgrade(const Frame& f);
+  void makeFrame(Frame& f, FrameType type, const char dest[kCallLen], uint8_t hops);
+  uint32_t random(uint32_t range);
+  uint32_t backoff();
+
+  NodeConfig cfg_;
+  char call_[kCallLen];
+  uint16_t boot_ = 0;
+  uint16_t seq_ = 0;
+  uint32_t rng_ = 1;
+  uint32_t startMs_ = 0;
+  uint32_t lastTxMs_ = 0;
+  bool sentAny_ = false;
+  uint32_t nextBeaconMs_ = 0;
+  uint32_t beaconNumber_ = 0;
+  uint16_t txCount_ = 0, rxCount_ = 0, relayed_ = 0, duplicates_ = 0;
+  int8_t lastRssi_ = 0;
+  bool queued_ = false;
+  uint16_t ackedSeq_ = 0;
+  uint32_t seen_[kSeenSize] = {};
+  uint8_t seenNext_ = 0;
+  Slot store_[kStoreSize] = {};
+};
+
+}  // namespace sat
