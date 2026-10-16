@@ -174,3 +174,80 @@ void Node::forgetSeen() {
   seenNext_ = 0;
 }
 
+// FNV-1a. 0 marks an empty entry in seen_, so it is never returned.
+uint32_t Node::messageId(const char origin[kCallLen], uint16_t boot, uint16_t seq) {
+  uint32_t h = 2166136261UL;
+  for (size_t i = 0; i < kCallLen; i++) h = (h ^ (uint8_t)origin[i]) * 16777619UL;
+  uint8_t tail[4] = {(uint8_t)boot, (uint8_t)(boot >> 8), (uint8_t)seq, (uint8_t)(seq >> 8)};
+  for (uint8_t b : tail) h = (h ^ b) * 16777619UL;
+  return h ? h : 1;
+}
+
+bool Node::seen(uint32_t id) const {
+  for (uint32_t s : seen_)
+    if (s == id) return true;
+  return false;
+}
+
+void Node::remember(uint32_t id) {
+  seen_[seenNext_] = id;
+  seenNext_ = (uint8_t)((seenNext_ + 1) % kSeenSize);
+}
+
+// Puts a frame in the store for 1 + repeats transmissions. When the store is
+// full, the copy that has been transmitted most often makes room.
+void Node::queue(const Frame& f, uint32_t dueMs) {
+  Slot* slot = &store_[0];
+  for (Slot& s : store_) {
+    if (s.left < slot->left) slot = &s;
+    if (s.left == 0) break;
+  }
+  slot->frame = f;
+  slot->dueMs = dueMs;
+  slot->left = (uint8_t)(1 + cfg_.repeats);
+}
+
+void Node::cancel(const char origin[kCallLen], uint16_t boot, uint16_t seq) {
+  for (Slot& s : store_) {
+    if (s.left && s.frame.type == FrameType::Message && s.frame.boot == boot &&
+        s.frame.seq == seq && callEquals(s.frame.origin, origin))
+      s.left = 0;
+  }
+}
+
+// We heard a message first along a longer path, and now a copy with more
+// hops left. Our next transmissions of it carry the larger number, so the
+// message still gets as far as the shortest path allows.
+void Node::upgrade(const Frame& f) {
+  if (f.hops == 0) return;
+  for (Slot& s : store_) {
+    if (s.left && s.frame.type == f.type && s.frame.boot == f.boot && s.frame.seq == f.seq &&
+        callEquals(s.frame.origin, f.origin) && s.frame.hops + 1 < f.hops)
+      s.frame.hops = (uint8_t)(f.hops - 1);
+  }
+}
+
+void Node::makeFrame(Frame& f, FrameType type, const char dest[kCallLen], uint8_t hops) {
+  f.type = type;
+  f.hops = hops;
+  memcpy(f.origin, call_, kCallLen);
+  memcpy(f.sender, call_, kCallLen);
+  memcpy(f.dest, dest, kCallLen);
+  f.boot = boot_;
+  f.seq = seq_++;
+  f.len = 0;
+}
+
+// xorshift32
+uint32_t Node::random(uint32_t range) {
+  rng_ ^= rng_ << 13;
+  rng_ ^= rng_ >> 17;
+  rng_ ^= rng_ << 5;
+  return range ? rng_ % range : 0;
+}
+
+uint32_t Node::backoff() {
+  return cfg_.backoffMinMs + random((uint32_t)(cfg_.backoffMaxMs - cfg_.backoffMinMs) + 1);
+}
+
+}  // namespace sat
