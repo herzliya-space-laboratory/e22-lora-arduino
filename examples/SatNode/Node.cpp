@@ -39,3 +39,78 @@ bool decodeBeacon(const Frame& f, BeaconInfo& out) {
   return true;
 }
 
+void Node::begin(const char call[kCallLen], uint16_t boot, uint32_t seed, uint32_t nowMs) {
+  setCall(call);
+  boot_ = boot;
+  rng_ = seed ? seed : 1;
+  startMs_ = nowMs;
+  // First beacon a few seconds after power-up, at a random moment so that
+  // stations switched on together do not beacon together.
+  nextBeaconMs_ = nowMs + 1000 + random(3000);
+}
+
+void Node::setCall(const char call[kCallLen]) { memcpy(call_, call, kCallLen); }
+
+Rx Node::onReceive(const Frame& f, int8_t rssiDbm, uint32_t nowMs) {
+  queued_ = false;
+  rxCount_++;
+  if (f.hops > kMaxHops || !isStation(f.origin) || !isStation(f.sender) ||
+      !(isBroadcast(f.dest) || isStation(f.dest)))
+    return Rx::Invalid;
+  if (cfg_.israeliOnly && !(isIsraeli(f.origin) && isIsraeli(f.sender))) return Rx::NotIsraeli;
+  lastRssi_ = rssiDbm;
+  if (callEquals(f.origin, call_)) return Rx::Own;
+
+  // A beacon that nobody relays reaches us once, so it does not need a
+  // place in the seen list.
+  if (f.type != FrameType::Beacon || f.hops > 0) {
+    uint32_t id = messageId(f.origin, f.boot, f.seq);
+    if (seen(id)) {
+      duplicates_++;
+      upgrade(f);
+      return Rx::Duplicate;
+    }
+    remember(id);
+  }
+
+  bool toUs = callEquals(f.dest, call_);
+  Rx result;
+  switch (f.type) {
+    case FrameType::Beacon:
+      result = Rx::Beacon;
+      break;
+    case FrameType::Message:
+      result = toUs || isBroadcast(f.dest) ? Rx::ForUs : Rx::ForOthers;
+      if (toUs) {
+        Frame ack;
+        makeFrame(ack, FrameType::Ack, f.origin, cfg_.hops);
+        put16(ack.payload, f.boot);
+        put16(ack.payload + 2, f.seq);
+        ack.len = 4;
+        queue(ack, nowMs + backoff());
+      }
+      break;
+    case FrameType::Ack:
+    default:
+      if (f.len < 4) return Rx::Invalid;
+      // The message got there: stop repeating it, here and at every station
+      // the ACK passes.
+      cancel(f.dest, get16(f.payload), get16(f.payload + 2));
+      if (toUs) {
+        ackedSeq_ = get16(f.payload + 2);
+        return Rx::AckForUs;
+      }
+      result = Rx::AckForOthers;
+      break;
+  }
+
+  if (cfg_.relay && f.hops > 0 && !toUs) {
+    Frame copy = f;
+    copy.hops--;
+    queue(copy, nowMs + backoff());
+    relayed_++;
+    queued_ = true;
+  }
+  return result;
+}
+
