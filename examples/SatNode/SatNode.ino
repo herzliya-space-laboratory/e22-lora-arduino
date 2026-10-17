@@ -55,3 +55,28 @@ constexpr int8_t PIN_RX = -1, PIN_TX = -1;
 #endif
 #define DEBUG Serial
 
+// Radio settings, the same on every station.
+constexpr uint8_t kChannel = 23;  // 433.125 MHz. 25..28 would disturb the main radio on 436.4
+constexpr E22AirRate kAirRate = E22AirRate::Rate2k4;  // slowest = longest range
+constexpr E22TxPower kTxPower = FULL_POWER ? E22TxPower::dBm30 : E22TxPower::dBm21;
+
+constexpr uint32_t kRadioRetryMs = 5000;
+constexpr uint32_t kConfigCheckMs = 600000;  // re-check the module's settings every 10 min
+constexpr uint32_t kQuietMs = 30;           // no transmitting until the input has been quiet this long
+
+// EEPROM: magic, boot count, callsign.
+constexpr int kEeMagic = 0, kEeBoot = 1, kEeCall = 3;
+constexpr uint8_t kMagic = 0x5A;
+
+E22 radio(RADIO_SERIAL, PIN_M0, PIN_M1, PIN_AUX, PIN_RESET);
+sat::Parser parser;
+sat::Node node;
+
+bool radioUp = false;
+uint32_t lastRadioTry = 0;
+uint32_t lastConfigCheck = 0;
+uint32_t lastRxByte = 0;
+
+char line[64];
+uint8_t lineLen = 0;
+
