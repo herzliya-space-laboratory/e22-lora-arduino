@@ -80,3 +80,79 @@ uint32_t lastRxByte = 0;
 char line[64];
 uint8_t lineLen = 0;
 
+// ---------------------------------------------------------------------------
+// Printing
+
+void printCall(const char call[sat::kCallLen]) {
+  char s[sat::kCallLen + 1];
+  sat::callToString(call, s);
+  DEBUG.print(s);
+}
+
+void printType(sat::FrameType t) {
+  switch (t) {
+    case sat::FrameType::Beacon: DEBUG.print(F("BEACON")); break;
+    case sat::FrameType::Message: DEBUG.print(F("MSG")); break;
+    case sat::FrameType::Ack: DEBUG.print(F("ACK")); break;
+  }
+}
+
+// "MSG 4X0GND>ALL #3.12 via 4X0SAT hops 2"
+void printHeader(const sat::Frame& f) {
+  printType(f.type);
+  DEBUG.print(' ');
+  printCall(f.origin);
+  DEBUG.print('>');
+  printCall(f.dest);
+  DEBUG.print(F(" #"));
+  DEBUG.print(f.boot);
+  DEBUG.print('.');
+  DEBUG.print(f.seq);
+  DEBUG.print(F(" via "));
+  printCall(f.sender);
+  DEBUG.print(F(" hops "));
+  DEBUG.print(f.hops);
+}
+
+void printPayload(const sat::Frame& f) {
+  DEBUG.print(F(": "));
+  if (f.type == sat::FrameType::Beacon) {
+    sat::BeaconInfo b;
+    if (!sat::decodeBeacon(f, b)) return;
+    DEBUG.print(F("n=")); DEBUG.print(b.number);
+    DEBUG.print(F(" up=")); DEBUG.print(b.uptimeS);
+    DEBUG.print(F("s boot=")); DEBUG.print(b.boot);
+    DEBUG.print(F(" tx=")); DEBUG.print(b.txCount);
+    DEBUG.print(F(" rx=")); DEBUG.print(b.rxCount);
+    DEBUG.print(F(" relayed=")); DEBUG.print(b.relayed);
+    DEBUG.print(F(" stored=")); DEBUG.print(b.stored);
+    DEBUG.print(F(" rssi=")); DEBUG.print(b.lastRssi);
+  } else if (f.type == sat::FrameType::Ack && f.len >= 4) {
+    DEBUG.print(F("got #"));
+    DEBUG.print(f.payload[0] | (f.payload[1] << 8));
+    DEBUG.print('.');
+    DEBUG.print(f.payload[2] | (f.payload[3] << 8));
+  } else {
+    DEBUG.print('"');
+    for (uint8_t i = 0; i < f.len; i++) {
+      char c = (char)f.payload[i];
+      DEBUG.print(c >= 32 && c < 127 ? c : '.');
+    }
+    DEBUG.print('"');
+  }
+}
+
+void printRx(sat::Rx rx) {
+  switch (rx) {
+    case sat::Rx::Invalid: DEBUG.print(F("drop (invalid)")); break;
+    case sat::Rx::NotIsraeli: DEBUG.print(F("drop (not 4X/4Z)")); break;
+    case sat::Rx::Own: DEBUG.print(F("drop (own)")); break;
+    case sat::Rx::Duplicate: DEBUG.print(F("drop (seen)")); break;
+    case sat::Rx::Beacon: DEBUG.print(F("rx")); break;
+    case sat::Rx::ForUs: DEBUG.print(F("rx")); break;
+    case sat::Rx::ForOthers: DEBUG.print(F("pass")); break;
+    case sat::Rx::AckForUs: DEBUG.print(F("rx")); break;
+    case sat::Rx::AckForOthers: DEBUG.print(F("pass")); break;
+  }
+}
+
