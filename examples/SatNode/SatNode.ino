@@ -156,3 +156,81 @@ void printRx(sat::Rx rx) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Radio
+
+// Our settings, written as a temporary (C2) config: the module's flash keeps
+// its own values, and we write ours again after every boot.
+void applySettings(E22Config& cfg) {
+  cfg.address = 0xFFFF;  // broadcast, and hear every address
+  cfg.netId = 0;
+  cfg.uartBaud = E22UartBaud::B9600;
+  cfg.parity = E22Parity::N8;
+  cfg.airRate = kAirRate;
+  cfg.packetSize = E22PacketSize::B240;
+  cfg.ambientRssi = false;
+  cfg.txPower = kTxPower;
+  cfg.channel = kChannel;
+  cfg.rssiByte = true;
+  cfg.fixedPoint = false;
+  cfg.relay = false;  // the module's own relay mode; relaying is done here
+  cfg.lbt = false;
+  cfg.worTransmitter = false;
+}
+
+bool settingsMatch(const E22Config& a, const E22Config& b) {
+  return a.address == b.address && a.netId == b.netId && a.airRate == b.airRate &&
+         a.txPower == b.txPower && a.channel == b.channel && a.rssiByte == b.rssiByte &&
+         a.fixedPoint == b.fixedPoint && a.uartBaud == b.uartBaud;
+}
+
+bool startRadio() {
+  if (!radio.begin(9600, PIN_RX, PIN_TX)) {
+    DEBUG.println(F("radio: begin() failed"));
+    return false;
+  }
+  E22Config cfg;
+  if (!radio.readConfig(cfg)) {
+    DEBUG.println(F("radio: readConfig() failed"));
+    return false;
+  }
+  applySettings(cfg);
+  if (!radio.writeConfig(cfg, false)) {
+    DEBUG.println(F("radio: writeConfig() failed"));
+    return false;
+  }
+  parser.reset();
+  parser.setExpectRssi(cfg.rssiByte);
+  DEBUG.print(F("radio: ok, "));
+  DEBUG.print(cfg.frequencyKHz());
+  DEBUG.println(F(" kHz"));
+  return true;
+}
+
+// The module could have been reset (brown-out on a 30 dBm transmission) and
+// gone back to the settings in its flash.
+void checkRadio() {
+  E22Config want, have;
+  if (radio.readConfig(have)) {
+    want = have;
+    applySettings(want);
+    if (settingsMatch(want, have)) return;
+    DEBUG.println(F("radio: settings changed, writing them again"));
+  } else {
+    DEBUG.println(F("radio: no answer"));
+  }
+  radioUp = startRadio();
+  lastRadioTry = millis();
+}
+
+void transmit(const sat::Frame& f) {
+  uint8_t buf[sat::kMaxFrameLen];
+  size_t n = sat::encode(f, buf, sizeof buf);
+  if (n == 0) return;
+  size_t sent = radio.send(buf, n);
+  DEBUG.print(sent == n ? F("tx ") : F("tx FAILED "));
+  printHeader(f);
+  printPayload(f);
+  DEBUG.println();
+}
+
