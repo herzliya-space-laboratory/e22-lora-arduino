@@ -234,3 +234,66 @@ void transmit(const sat::Frame& f) {
   DEBUG.println();
 }
 
+void handleFrame() {
+  const sat::Frame& f = parser.frame();
+  int rssi = E22::rssiByteToDbm(parser.rssiByte());
+  sat::Rx rx = node.onReceive(f, (int8_t)(rssi < -128 ? -128 : rssi), millis());
+  printRx(rx);
+  DEBUG.print(' ');
+  printHeader(f);
+  DEBUG.print(F(" rssi "));
+  if (rssi == 0) DEBUG.print(F("n/a"));
+  else DEBUG.print(rssi);
+  if (rx != sat::Rx::Duplicate && rx != sat::Rx::Own) printPayload(f);
+  if (rx == sat::Rx::AckForUs) DEBUG.print(F(" (delivered)"));
+  if (node.queued()) DEBUG.print(F(" (relaying)"));
+  DEBUG.println();
+}
+
+// ---------------------------------------------------------------------------
+// EEPROM and console
+
+uint16_t loadIdentity(char call[sat::kCallLen]) {
+  uint16_t boot = 0;
+  bool ok = EEPROM.read(kEeMagic) == kMagic;
+  if (ok) {
+    EEPROM.get(kEeBoot, boot);
+    for (uint8_t i = 0; i < sat::kCallLen; i++) call[i] = (char)EEPROM.read(kEeCall + i);
+    ok = sat::isStation(call);
+  }
+  if (!ok) {
+    // Placeholder callsigns. Set the real ones with the "call" command.
+    sat::setCall(call, ROLE_GROUND ? "4X0GND" : "4X0SAT");
+    for (uint8_t i = 0; i < sat::kCallLen; i++) EEPROM.write(kEeCall + i, (uint8_t)call[i]);
+    EEPROM.write(kEeMagic, kMagic);
+    boot = 0;
+  }
+  boot++;
+  EEPROM.put(kEeBoot, boot);
+#if defined(ESP32)
+  EEPROM.commit();
+#endif
+  return boot;
+}
+
+void saveCall(const char call[sat::kCallLen]) {
+  for (uint8_t i = 0; i < sat::kCallLen; i++) EEPROM.write(kEeCall + i, (uint8_t)call[i]);
+#if defined(ESP32)
+  EEPROM.commit();
+#endif
+}
+
+void printStatus() {
+  DEBUG.print(F("station "));
+  printCall(node.call());
+  DEBUG.print(ROLE_GROUND ? F(" (ground)") : F(" (satellite)"));
+  DEBUG.print(F(" boot ")); DEBUG.print(node.boot());
+  DEBUG.print(F(" radio ")); DEBUG.print(radioUp ? F("ok") : F("DOWN"));
+  DEBUG.print(F(" tx ")); DEBUG.print(node.txCount());
+  DEBUG.print(F(" rx ")); DEBUG.print(node.rxCount());
+  DEBUG.print(F(" relayed ")); DEBUG.print(node.relayed());
+  DEBUG.print(F(" seen-again ")); DEBUG.print(node.duplicates());
+  DEBUG.print(F(" bad-frames ")); DEBUG.print(parser.dropped());
+  DEBUG.print(F(" stored ")); DEBUG.println(node.stored());
+}
+
