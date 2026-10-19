@@ -347,3 +347,60 @@ void pumpConsole() {
   }
 }
 
+// ---------------------------------------------------------------------------
+
+void setup() {
+#if defined(__AVR__)
+  wdt_enable(WDTO_8S);
+#endif
+  DEBUG.begin(115200);
+#if defined(ESP32)
+  EEPROM.begin(16);
+#endif
+  char call[sat::kCallLen];
+  uint16_t boot = loadIdentity(call);
+
+  sat::NodeConfig& cfg = node.config();
+  cfg.beacon = !ROLE_GROUND;
+  cfg.relay = !ROLE_GROUND;
+  uint32_t seed = boot * 2654435761UL ^ (uint32_t)analogRead(A0) << 16 ^ micros();
+  node.begin(call, boot, seed, millis());
+
+  DEBUG.println();
+  printStatus();
+  radioUp = startRadio();
+  lastRadioTry = lastConfigCheck = millis();
+}
+
+void loop() {
+#if defined(__AVR__)
+  wdt_reset();
+#endif
+  pumpConsole();
+  uint32_t now = millis();
+
+  if (!radioUp) {
+    if (now - lastRadioTry >= kRadioRetryMs) {
+      radioUp = startRadio();
+      lastRadioTry = now;
+    }
+    return;
+  }
+
+  int b;
+  while ((b = radio.readByte()) >= 0) {
+    lastRxByte = now;
+    if (parser.feed((uint8_t)b, now)) handleFrame();
+  }
+  if (parser.expire(now)) handleFrame();
+
+  bool quiet = !parser.busy() && now - lastRxByte >= kQuietMs;
+  if (quiet && now - lastConfigCheck >= kConfigCheckMs) {
+    lastConfigCheck = now;
+    checkRadio();
+    return;
+  }
+
+  sat::Frame f;
+  if (quiet && node.poll(now, f)) transmit(f);
+}
