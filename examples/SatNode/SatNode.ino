@@ -297,3 +297,53 @@ void printStatus() {
   DEBUG.print(F(" stored ")); DEBUG.println(node.stored());
 }
 
+void handleLine(char* text) {
+  if (strncmp(text, "msg ", 4) == 0) {
+    char* dest = text + 4;
+    char* body = strchr(dest, ' ');
+    char call[sat::kCallLen];
+    if (body) *body++ = '\0';
+    if (!body || !sat::setCall(call, dest)) {
+      DEBUG.println(F("usage: msg <ALL|callsign> <text>"));
+      return;
+    }
+    size_t len = strlen(body);
+    if (len > sat::kMaxPayload) len = sat::kMaxPayload;
+    uint16_t seq;
+    if (node.send(call, (const uint8_t*)body, (uint8_t)len, millis(), &seq)) {
+      DEBUG.print(F("queued #")); DEBUG.print(node.boot());
+      DEBUG.print('.'); DEBUG.println(seq);
+    } else {
+      DEBUG.println(F("bad destination"));
+    }
+  } else if (strncmp(text, "call ", 5) == 0) {
+    char call[sat::kCallLen];
+    if (!sat::setCall(call, text + 5) || !sat::isStation(call)) {
+      DEBUG.println(F("bad callsign"));
+      return;
+    }
+    if (!sat::isIsraeli(call)) DEBUG.println(F("warning: not 4X/4Z, other stations will drop it"));
+    node.setCall(call);
+    saveCall(call);
+    printStatus();
+  } else if (strcmp(text, "status") == 0) {
+    printStatus();
+  } else if (text[0]) {
+    DEBUG.println(F("commands: msg <ALL|callsign> <text>, call <callsign>, status"));
+  }
+}
+
+void pumpConsole() {
+  while (DEBUG.available()) {
+    char c = (char)DEBUG.read();
+    if (c == '\r') continue;
+    if (c == '\n') {
+      line[lineLen] = '\0';
+      handleLine(line);
+      lineLen = 0;
+    } else if ((size_t)lineLen + 1 < sizeof line) {
+      line[lineLen++] = c;
+    }
+  }
+}
+
