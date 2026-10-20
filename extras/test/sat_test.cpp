@@ -141,3 +141,24 @@ static void testCallsigns() {
   CHECK(std::strcmp(s, "4Z5") == 0);
 }
 
+// ---------------------------------------------------------------------------
+// Parser
+
+static std::vector<uint8_t> bytesOf(const Frame& f) {
+  uint8_t buf[kMaxFrameLen];
+  size_t n = encode(f, buf, sizeof buf);
+  return std::vector<uint8_t>(buf, buf + n);
+}
+
+struct Got {
+  Frame f;
+  uint8_t rssi;
+};
+
+static std::vector<Got> feedAll(Parser& p, const std::vector<uint8_t>& bytes, uint32_t t = 0) {
+  std::vector<Got> out;
+  for (uint8_t b : bytes)
+    if (p.feed(b, t)) out.push_back({p.frame(), p.rssiByte()});
+  return out;
+}
+
