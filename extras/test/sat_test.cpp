@@ -254,3 +254,27 @@ static void testParser() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Node, one at a time
+
+static Node makeNode(const char* call, uint16_t boot = 1, uint32_t seed = 1) {
+  Node n;
+  char c[kCallLen];
+  setCall(c, call);
+  n.begin(c, boot, seed, 0);
+  n.config().beacon = false;
+  return n;
+}
+
+static int drain(Node& n, uint32_t from, uint32_t to, std::vector<Frame>* out = nullptr) {
+  int count = 0;
+  Frame f;
+  for (uint32_t t = from; t <= to; t += 10) {
+    if (n.poll(t, f)) {
+      count++;
+      if (out) out->push_back(f);
+    }
+  }
+  return count;
+}
+
