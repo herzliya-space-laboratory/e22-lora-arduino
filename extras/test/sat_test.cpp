@@ -162,3 +162,95 @@ static std::vector<Got> feedAll(Parser& p, const std::vector<uint8_t>& bytes, ui
   return out;
 }
 
+static void testParser() {
+  Frame a = makeMessage("4X1ABC", "4X1ABC", "ALL", 3, 1, 1, "first");
+  Frame b = makeMessage("4X2DEF", "4X2DEF", "4X1ABC", 2, 9, 77, "second");
+  std::vector<uint8_t> fa = bytesOf(a), fb = bytesOf(b);
+
+  {  // Without RSSI byte, garbage before and between.
+    Parser p;
+    std::vector<uint8_t> s = {0x00, 0xA5, 0x13, 0xA5};
+    s.insert(s.end(), fa.begin(), fa.end());
+    s.insert(s.end(), {'h', 'i', '\n'});
+    s.insert(s.end(), fb.begin(), fb.end());
+    auto got = feedAll(p, s);
+    CHECK(got.size() == 2);
+    CHECK(got.size() == 2 && sameFrame(got[0].f, a) && sameFrame(got[1].f, b));
+  }
+  {  // With RSSI byte after each packet, including RSSI bytes that look like sync.
+    Parser p;
+    p.setExpectRssi(true);
+    std::vector<uint8_t> s = fa;
+    s.push_back(0xA5);  // RSSI -91 dBm
+    s.insert(s.end(), fb.begin(), fb.end());
+    s.push_back(0x5A);
+    auto got = feedAll(p, s);
+    CHECK(got.size() == 2);
+    CHECK(got.size() == 2 && got[0].rssi == 0xA5 && got[1].rssi == 0x5A);
+  }
+  {  // RSSI byte never comes: the frame is handed over after the gap.
+    Parser p;
+    p.setExpectRssi(true);
+    auto got = feedAll(p, fa, 1000);
+    CHECK(got.empty() && p.busy());
+    CHECK(!p.expire(1000 + Parser::kGapMs - 1));
+    CHECK(p.expire(1000 + Parser::kGapMs));
+    CHECK(sameFrame(p.frame(), a) && p.rssiByte() == 0);
+    CHECK(!p.busy());
+  }
+  {  // A frame cut off in the middle is dropped after the gap, the next one is fine.
+    Parser p;
+    std::vector<uint8_t> half(fa.begin(), fa.begin() + 20);
+    CHECK(feedAll(p, half, 0).empty());
+    CHECK(!p.expire(Parser::kGapMs) || false);
+    CHECK(!p.busy());
+    CHECK(p.dropped() == 1);
+    auto got = feedAll(p, fb, 500);
+    CHECK(got.size() == 1 && sameFrame(got[0].f, b));
+  }
+  {  // Corrupted frame, then a good one: the good one survives.
+    Parser p;
+    std::vector<uint8_t> bad = fa;
+    bad[30] ^= 0x40;
+    std::vector<uint8_t> s = bad;
+    s.insert(s.end(), fb.begin(), fb.end());
+    auto got = feedAll(p, s);
+    CHECK(got.size() == 1 && sameFrame(got[0].f, b));
+    CHECK(p.dropped() == 1);
+  }
+  {  // False sync in foreign data right before a frame, no gap between them.
+    Parser p;
+    // The false header claims a long frame, so the real one is found only
+    // after the gap, but it is found.
+    std::vector<uint8_t> s = {'4', 'X', 0xA5, 0x5A, 0x12, 'x', 'y'};
+    s.insert(s.end(), fa.begin(), fa.end());
+    auto got = feedAll(p, s, 0);
+    CHECK(got.empty());
+    CHECK(p.expire(Parser::kGapMs) && sameFrame(p.frame(), a));
+    CHECK(!p.busy());
+    // Same with the RSSI byte after the frame.
+    Parser q;
+    q.setExpectRssi(true);
+    s.push_back(0xC8);
+    CHECK(feedAll(q, s, 0).empty());
+    CHECK(q.expire(Parser::kGapMs) && sameFrame(q.frame(), a) && q.rssiByte() == 0xC8);
+  }
+  {  // False sync whose length byte says 255.
+    Parser p;
+    std::vector<uint8_t> s(30, 0x00);
+    s[0] = 0xA5; s[1] = 0x5A; s[2] = 0x12; s[26] = 255;
+    s.insert(s.end(), fb.begin(), fb.end());
+    auto got = feedAll(p, s);
+    CHECK(got.size() == 1 && sameFrame(got[0].f, b));
+  }
+  {  // Random noise never crashes the parser and never yields a frame.
+    std::mt19937 rng(1);
+    Parser p;
+    p.setExpectRssi(true);
+    int frames = 0;
+    for (int i = 0; i < 200000; i++)
+      if (p.feed((uint8_t)rng(), (uint32_t)i)) frames++;
+    CHECK(frames == 0);
+  }
+}
+
