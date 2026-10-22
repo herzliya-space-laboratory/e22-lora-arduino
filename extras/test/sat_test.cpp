@@ -700,3 +700,41 @@ static void checkBounded(Sim& sim, const char* name) {
   }
 }
 
+// Ground station 0, satellites 1..4 in a line: 0 - 1 - 2 - 3 - 4.
+static void testLine() {
+  SimConfig cfg;
+  cfg.collisions = false;
+  Sim sim(5, 11, cfg);
+  sim.setup(0, "4X0GND", true);
+  for (int i = 1; i < 5; i++) sim.setup(i, satName(i), false);
+  for (int i = 0; i < 4; i++) sim.link(i, i + 1);
+  sim.run(5000);
+  MsgKey m = sim.send(0, "ALL", "hello chain");
+  sim.run(180000);
+  for (int i = 1; i < 5; i++)
+    CHECK_MSG(sim.at(i).delivered.count(m) == 1, "line: %s did not get the broadcast",
+              sim.at(i).call.c_str());
+  checkBounded(sim, "line broadcast");
+
+  // To the far end, 4 hops away with hops = 3: ACK comes back, ground stops repeating.
+  MsgKey d = sim.send(0, satName(4), "to the end");
+  sim.run(180000);
+  CHECK(sim.at(4).delivered.count(d) == 1);
+  CHECK(sim.at(0).acked.count(d.seq) == 1);
+  CHECK_MSG(sim.at(0).txCount[d] == 1, "ground sent the addressed message %d times",
+            sim.at(0).txCount[d]);
+  for (int i = 1; i < 4; i++) CHECK(sim.at(i).delivered.count(d) == 0);
+  checkBounded(sim, "line addressed");
+
+  // 5 hops away is out of reach with hops = 3: the message dies at station 4.
+  Sim far(6, 12, cfg);
+  far.setup(0, "4X0GND", true);
+  for (int i = 1; i < 6; i++) far.setup(i, satName(i), false);
+  for (int i = 0; i < 5; i++) far.link(i, i + 1);
+  MsgKey f = far.send(0, "ALL", "too far");
+  far.run(180000);
+  CHECK(far.at(4).delivered.count(f) == 1);
+  CHECK(far.at(5).delivered.count(f) == 0);
+  checkBounded(far, "line too far");
+}
+
