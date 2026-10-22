@@ -663,3 +663,40 @@ class Sim {
   uint64_t transmissions_ = 0;
 };
 
+// Hops from a station, passing only through satellites (station 0, the
+// ground, does not relay).
+static std::vector<int> distancesFrom(Sim& sim, int from) {
+  std::vector<int> d(sim.size(), -1);
+  std::vector<int> q = {from};
+  d[from] = 0;
+  for (size_t k = 0; k < q.size(); k++)
+    for (int j = 0; j < sim.size(); j++)
+      if (sim.linked(q[k], j) && d[j] < 0 && (q[k] == from || q[k] != 0)) {
+        d[j] = d[q[k]] + 1;
+        q.push_back(j);
+      }
+  return d;
+}
+
+static std::string satName(int i) {
+  // 4X1SA, 4X1SB, ... 4X1SZ, 4X2SA ...
+  return "4X" + std::to_string(1 + i / 26) + "S" + std::string(1, (char)('A' + i % 26));
+}
+
+// Every station transmits each message at most 1 + repeats times, and once
+// everything has settled no station still holds anything to send.
+static void checkBounded(Sim& sim, const char* name) {
+  int maxCopies = 1 + sim.at(1 % sim.size()).node.config().repeats;
+  for (int i = 0; i < sim.size(); i++) {
+    for (auto& kv : sim.at(i).txCount)
+      CHECK_MSG(kv.second <= maxCopies, "%s: %s sent %s#%u.%u %d times", name,
+                sim.at(i).call.c_str(), kv.first.origin.c_str(), kv.first.boot, kv.first.seq,
+                kv.second);
+    CHECK_MSG(sim.at(i).node.stored() == 0, "%s: %s still holds %u", name,
+              sim.at(i).call.c_str(), sim.at(i).node.stored());
+    for (auto& kv : sim.at(i).delivered)
+      CHECK_MSG(kv.second == 1, "%s: %s got %s#%u.%u %d times", name, sim.at(i).call.c_str(),
+                kv.first.origin.c_str(), kv.first.boot, kv.first.seq, kv.second);
+  }
+}
+
