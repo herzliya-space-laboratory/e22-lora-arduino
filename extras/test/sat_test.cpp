@@ -609,3 +609,57 @@ class Sim {
     return true;
   }
 
+  // Module output at 9600 baud: about one byte per ms, then the RSSI byte.
+  void deliver(int r, const std::vector<uint8_t>& bytes, uint32_t t) {
+    Station& s = st_[r];
+    uint32_t start = t;
+    if (!s.uart.empty()) start = std::max(start, s.uart.back().first + 1);
+    for (size_t k = 0; k < bytes.size(); k++) s.uart.push_back({start + (uint32_t)k, bytes[k]});
+    s.uart.push_back({start + (uint32_t)bytes.size(), (uint8_t)(256 - 40 - rng_() % 60)});
+  }
+
+  void transmit(int i, const Frame& f) {
+    Station& s = st_[i];
+    uint8_t buf[kMaxFrameLen];
+    size_t n = encode(f, buf, sizeof buf);
+    // UART into the module, then about 3.3 ms per byte at 2.4 kbps plus preamble.
+    uint32_t airMs = (uint32_t)(n + n * 8 * 1000 / 2400 + 40);
+    air_.push_back({i, now_ + (uint32_t)n, now_ + airMs, std::vector<uint8_t>(buf, buf + n)});
+    s.txEnd = now_ + airMs;
+    if (f.type != FrameType::Beacon) s.txCount[keyOf(f)]++;
+    lastTxAnywhere_ = now_;
+    if (f.type != FrameType::Beacon) lastMsgTx_ = now_;
+    transmissions_++;
+    if (cfg_.forgetSeen && now_ - lastForget_ >= 500) {
+      for (Station& o : st_) o.node.forgetSeen();
+      lastForget_ = now_;
+    }
+  }
+
+  void handle(int i) {
+    Station& s = st_[i];
+    const Frame& f = s.parser.frame();
+    Rx rx = s.node.onReceive(f, (int8_t)E22rssi(s.parser.rssiByte()), now_);
+    if (rx == Rx::ForUs) s.delivered[keyOf(f)]++;
+    if (rx == Rx::AckForUs) s.acked.insert(s.node.ackedSeq());
+  }
+
+  static int E22rssi(uint8_t b) { return b == 0 ? 0 : -(256 - (int)b); }
+
+ public:
+  uint32_t lastMsgTx() const { return lastMsgTx_; }
+
+ private:
+  std::vector<Station> st_;
+  std::vector<std::vector<bool>> adj_;
+  std::vector<Air> air_;
+  std::mt19937 rng_;
+  SimConfig cfg_;
+  uint32_t now_ = 0;
+  uint32_t lastTxAnywhere_ = 0;
+  uint32_t lastMsgTx_ = 0;
+  uint32_t lastForget_ = 0;
+  int collisions_ = 0;
+  uint64_t transmissions_ = 0;
+};
+
