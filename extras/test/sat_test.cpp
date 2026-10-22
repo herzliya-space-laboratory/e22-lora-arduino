@@ -352,3 +352,53 @@ static void testNodeRules() {
     CHECK(n.onReceive(makeMessage("4X0GND", "4X0GND", "4X3SAT", 2, 1, 1, "x"), 0, 0) == Rx::ForOthers);
     CHECK(n.queued());
   }
+  {  // ACK for our message stops our repeats; an ACK passing by stops a relay's repeats.
+    Node g = makeNode("4X0GND");
+    uint16_t seq = 0;
+    CHECK(g.send(sat1, (const uint8_t*)"hi", 2, 0, &seq));
+    Frame f;
+    CHECK(g.poll(0, f) && f.type == FrameType::Message && f.seq == seq);
+    CHECK(g.stored() == 1);
+    Frame ack = makeMessage("4X1SAT", "4X1SAT", "4X0GND", 3, 4, 0, "");
+    ack.type = FrameType::Ack;
+    ack.len = 4;
+    ack.payload[0] = 1; ack.payload[1] = 0; ack.payload[2] = (uint8_t)seq; ack.payload[3] = 0;
+    CHECK(g.onReceive(ack, 0, 500) == Rx::AckForUs);
+    CHECK(g.ackedSeq() == seq);
+    CHECK(g.stored() == 0);
+    CHECK(drain(g, 500, 200000) == 0);
+
+    Node r = makeNode("4X2SAT");
+    Frame m = makeMessage("4X0GND", "4X0GND", "4X1SAT", 3, 1, 0, "hi");
+    r.onReceive(m, 0, 0);
+    CHECK(drain(r, 0, 1000) == 1);  // relayed once, repeats pending
+    CHECK(r.stored() == 1);
+    Frame ack2 = ack;
+    ack2.seq = 1;
+    ack2.payload[2] = 0;
+    CHECK(r.onReceive(ack2, 0, 2000) == Rx::AckForOthers);
+    CHECK(r.stored() == 1);  // only the relayed ACK is left
+    std::vector<Frame> sent;
+    drain(r, 2000, 200000, &sent);
+    bool onlyAcks = true;
+    for (const Frame& s : sent)
+      if (s.type != FrameType::Ack) onlyAcks = false;
+    CHECK(onlyAcks && sent.size() == 1u + r.config().repeats);
+  }
+  {  // Wrong send() arguments.
+    Node n = makeNode("4X0GND");
+    uint8_t big[kMaxPayload + 1] = {};
+    CHECK(!n.send(all, big, kMaxPayload + 1, 0));
+    char bad[kCallLen];
+    setCall(bad, "AB");
+    CHECK(!n.send(bad, big, 1, 0));
+  }
+  {  // Minimum gap between our transmissions.
+    Node n = makeNode("4X0GND");
+    n.send(all, (const uint8_t*)"a", 1, 0);
+    n.send(all, (const uint8_t*)"b", 1, 0);
+    Frame f;
+    CHECK(n.poll(0, f));
+    CHECK(!n.poll(n.config().minGapMs - 1, f));
+    CHECK(n.poll(n.config().minGapMs, f));
+  }
