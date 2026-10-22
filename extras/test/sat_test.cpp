@@ -402,3 +402,55 @@ static void testNodeRules() {
     CHECK(!n.poll(n.config().minGapMs - 1, f));
     CHECK(n.poll(n.config().minGapMs, f));
   }
+  {  // Beacons: on time, counted, payload decodes, not stored, not relayed.
+    Node n = makeNode("4X1SAT");
+    n.config().beacon = true;
+    std::vector<Frame> sent;
+    drain(n, 0, 95000, &sent);
+    CHECK(sent.size() == 3 || sent.size() == 4);
+    BeaconInfo b{};
+    CHECK(!sent.empty() && decodeBeacon(sent.back(), b));
+    CHECK(b.number == sent.size() && b.boot == 1 && b.txCount == sent.size());
+    CHECK(sent.back().hops == 0 && isBroadcast(sent.back().dest));
+    CHECK(n.stored() == 0);
+    Node other = makeNode("4X2SAT");
+    CHECK(other.onReceive(sent.back(), -60, 0) == Rx::Beacon);
+    CHECK(!other.queued());
+  }
+  {  // Store full: the copy transmitted most often makes room, nothing breaks.
+    Node n = makeNode("4X1SAT");
+    for (uint16_t i = 0; i < 10; i++)
+      n.onReceive(makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, i, "x"), 0, 0);
+    CHECK(n.stored() == Node::kStoreSize);
+    CHECK(drain(n, 0, 300000) <= (int)(Node::kStoreSize * (1 + n.config().repeats)));
+    CHECK(n.stored() == 0);
+  }
+  {  // A power-cycled station starts seq at 0 again; the new boot count keeps it new.
+    Node n = makeNode("4X1SAT");
+    CHECK(n.onReceive(makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, 0, "old"), 0, 0) == Rx::ForUs);
+    CHECK(n.onReceive(makeMessage("4X0GND", "4X0GND", "ALL", 3, 2, 0, "new"), 0, 0) == Rx::ForUs);
+  }
+  {  // A better copy upgrades the hops of the stored one.
+    Node n = makeNode("4X1SAT");
+    n.onReceive(makeMessage("4X0GND", "4X3SAT", "ALL", 1, 1, 0, "x"), 0, 0);
+    CHECK(drain(n, 0, 1000) == 1);
+    n.onReceive(makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, 0, "x"), 0, 1000);
+    std::vector<Frame> sent;
+    drain(n, 1000, 200000, &sent);
+    CHECK(!sent.empty() && sent[0].hops == 2);
+  }
+  {  // millis() wrapping around.
+    Node n;
+    char c[kCallLen];
+    setCall(c, "4X1SAT");
+    uint32_t t0 = 0xFFFFF000UL;
+    n.begin(c, 1, 7, t0);
+    n.config().beacon = false;
+    n.onReceive(makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, 0, "x"), 0, t0);
+    int c2 = 0;
+    Frame f;
+    for (uint32_t t = t0; t != t0 + 200000; t += 10)
+      if (n.poll(t, f)) c2++;
+    CHECK(c2 == 1 + n.config().repeats);
+  }
+}
