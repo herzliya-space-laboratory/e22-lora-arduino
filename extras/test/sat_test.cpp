@@ -508,3 +508,47 @@ class Sim {
   int size() const { return (int)st_.size(); }
   Station& at(int i) { return st_[i]; }
 
+  void setup(int i, const std::string& call, bool ground, uint16_t boot = 1) {
+    Station& s = st_[i];
+    s.call = call;
+    s.node = Node();
+    char c[kCallLen];
+    setCall(c, call.c_str());
+    s.node.config().beacon = !ground;
+    s.node.config().relay = !ground;
+    s.node.begin(c, boot, (uint32_t)rng_() | 1, now_);
+    s.parser = Parser();
+    s.parser.setExpectRssi(true);
+    s.uart.clear();
+    s.uartPos = 0;
+  }
+
+  // Power cycle: RAM gone, boot count + 1.
+  void powerCycle(int i) {
+    Station& s = st_[i];
+    bool ground = !s.node.config().relay;
+    std::map<MsgKey, int> tx = s.txCount, del = s.delivered;
+    setup(i, s.call, ground, (uint16_t)(s.node.boot() + 1));
+    s.txCount = tx;
+    s.delivered = del;
+  }
+
+  MsgKey send(int i, const std::string& dest, const std::string& text) {
+    char d[kCallLen];
+    setCall(d, dest.c_str());
+    uint16_t seq = 0;
+    bool ok = st_[i].node.send(d, (const uint8_t*)text.data(), (uint8_t)text.size(), now_, &seq);
+    CHECK(ok);
+    return {st_[i].call, st_[i].node.boot(), seq};
+  }
+
+  void run(uint32_t ms) {
+    uint32_t until = now_ + ms;
+    for (; now_ < until; now_++) step();
+  }
+
+  uint32_t now() const { return now_; }
+  uint32_t lastTxAnywhere() const { return lastTxAnywhere_; }
+  int collisions() const { return collisions_; }
+  uint64_t transmissions() const { return transmissions_; }
+
