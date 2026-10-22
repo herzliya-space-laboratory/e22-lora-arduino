@@ -278,3 +278,77 @@ static int drain(Node& n, uint32_t from, uint32_t to, std::vector<Frame>* out = 
   return count;
 }
 
+static void testNodeRules() {
+  char all[kCallLen], sat1[kCallLen];
+  setCall(all, "ALL");
+  setCall(sat1, "4X1SAT");
+
+  {  // Relays a new broadcast with hops - 1, 1 + repeats times, then stops.
+    Node n = makeNode("4X1SAT");
+    Frame m = makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, 5, "hi");
+    CHECK(n.onReceive(m, -50, 0) == Rx::ForUs);
+    CHECK(n.queued());
+    std::vector<Frame> sent;
+    int c = drain(n, 0, 200000, &sent);
+    CHECK(c == 1 + n.config().repeats);
+    for (const Frame& f : sent) {
+      CHECK(f.hops == 2 && str(f.sender) == "4X1SAT" && str(f.origin) == "4X0GND" && f.seq == 5);
+    }
+    CHECK(n.stored() == 0);
+    // The first copy waits for the random backoff, not longer.
+    Node n2 = makeNode("4X1SAT");
+    n2.onReceive(m, -50, 1000);
+    Frame f;
+    CHECK(!n2.poll(1000 + n2.config().backoffMinMs - 1, f));
+    CHECK(n2.poll(1000 + n2.config().backoffMaxMs, f));
+  }
+  {  // Second copy is a duplicate, own messages are ignored.
+    Node n = makeNode("4X1SAT");
+    Frame m = makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, 5, "hi");
+    CHECK(n.onReceive(m, -50, 0) == Rx::ForUs);
+    Frame again = m;
+    setCall(again.sender, "4X2SAT");
+    again.hops = 1;
+    CHECK(n.onReceive(again, -50, 10) == Rx::Duplicate);
+    CHECK(!n.queued());
+    Frame own = makeMessage("4X1SAT", "4X2SAT", "ALL", 2, 1, 0, "mine");
+    CHECK(n.onReceive(own, -50, 20) == Rx::Own);
+    CHECK(!n.queued());
+  }
+  {  // hops 0: delivered, not relayed.
+    Node n = makeNode("4X1SAT");
+    CHECK(n.onReceive(makeMessage("4X0GND", "4X2SAT", "ALL", 0, 1, 1, "x"), -50, 0) == Rx::ForUs);
+    CHECK(!n.queued() && n.stored() == 0);
+  }
+  {  // Bad frames.
+    Node n = makeNode("4X1SAT");
+    CHECK(n.onReceive(makeMessage("4X0GND", "4X0GND", "ALL", kMaxHops + 1, 1, 1, "x"), 0, 0) ==
+          Rx::Invalid);
+    CHECK(n.onReceive(makeMessage("W1AW", "W1AW", "ALL", 3, 1, 1, "x"), 0, 0) == Rx::NotIsraeli);
+    CHECK(n.onReceive(makeMessage("4X0GND", "K1ABC", "ALL", 3, 1, 1, "x"), 0, 0) == Rx::NotIsraeli);
+    Frame bad = makeMessage("4X0GND", "4X0GND", "ALL", 3, 1, 1, "x");
+    std::memcpy(bad.origin, "4X\x01GND", 6);
+    CHECK(n.onReceive(bad, 0, 0) == Rx::Invalid);
+    CHECK(n.stored() == 0);
+    n.config().israeliOnly = false;
+    CHECK(n.onReceive(makeMessage("W1AW", "W1AW", "ALL", 3, 1, 1, "x"), 0, 0) == Rx::ForUs);
+  }
+  {  // A message to us: ACK queued, the message itself not relayed.
+    Node n = makeNode("4X1SAT");
+    CHECK(n.onReceive(makeMessage("4X0GND", "4X2SAT", "4X1SAT", 2, 3, 9, "x"), 0, 0) == Rx::ForUs);
+    CHECK(!n.queued());
+    std::vector<Frame> sent;
+    drain(n, 0, 1000, &sent);
+    CHECK(sent.size() == 1);
+    if (sent.size() == 1) {
+      const Frame& a = sent[0];
+      CHECK(a.type == FrameType::Ack && str(a.dest) == "4X0GND" && str(a.origin) == "4X1SAT");
+      CHECK(a.len == 4 && a.payload[0] == 3 && a.payload[2] == 9);
+      CHECK(a.hops == n.config().hops);
+    }
+  }
+  {  // A message to someone else is relayed.
+    Node n = makeNode("4X1SAT");
+    CHECK(n.onReceive(makeMessage("4X0GND", "4X0GND", "4X3SAT", 2, 1, 1, "x"), 0, 0) == Rx::ForOthers);
+    CHECK(n.queued());
+  }
