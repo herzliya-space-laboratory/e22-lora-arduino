@@ -552,3 +552,60 @@ class Sim {
   int collisions() const { return collisions_; }
   uint64_t transmissions() const { return transmissions_; }
 
+ private:
+  void step() {
+    // Packets that finish now come out of the receivers' modules.
+    for (const Air& a : air_) {
+      if (a.end != now_) continue;
+      for (int r = 0; r < size(); r++) {
+        if (r == a.from || !adj_[a.from][r]) continue;
+        if (heardBy(r, a)) deliver(r, a.bytes, a.end);
+      }
+    }
+    air_.erase(std::remove_if(air_.begin(), air_.end(),
+                              [&](const Air& a) { return a.end + 2000 < now_; }),
+               air_.end());
+
+    std::uniform_real_distribution<double> u(0, 1);
+    for (int i = 0; i < size(); i++) {
+      Station& s = st_[i];
+      if (cfg_.foreign > 0 && u(rng_) < cfg_.foreign / 1000.0) {
+        std::string junk = "4X1ZZZ hello from a PingPong " + std::to_string(rng_() % 1000) + "\n";
+        if (rng_() % 4 == 0) junk[5] = (char)0xA5, junk[6] = 0x5A;  // false sync
+        deliver(i, std::vector<uint8_t>(junk.begin(), junk.end()), now_);
+      }
+      if (now_ < s.stallUntil) continue;  // loop() busy elsewhere
+      if (cfg_.stallMaxMs > 0 && rng_() % 200 == 0) s.stallUntil = now_ + rng_() % cfg_.stallMaxMs;
+
+      // Same order as SatNode.ino loop().
+      while (s.uartPos < s.uart.size() && s.uart[s.uartPos].first <= now_) {
+        s.lastRxByte = now_;
+        if (s.parser.feed(s.uart[s.uartPos].second, now_)) handle(i);
+        s.uartPos++;
+      }
+      if (s.uartPos == s.uart.size()) {
+        s.uart.clear();
+        s.uartPos = 0;
+      }
+      if (s.parser.expire(now_)) handle(i);
+      if (now_ < s.txEnd) continue;  // module still transmitting
+      bool quiet = !s.parser.busy() && now_ - s.lastRxByte >= 30 && s.uartPos == s.uart.size();
+      Frame f;
+      if (quiet && s.node.poll(now_, f)) transmit(i, f);
+    }
+  }
+
+  bool heardBy(int r, const Air& a) {
+    std::uniform_real_distribution<double> u(0, 1);
+    if (cfg_.loss > 0 && u(rng_) < cfg_.loss) return false;
+    if (!cfg_.collisions) return true;
+    for (const Air& o : air_) {
+      if (&o == &a || o.end < a.start || o.start > a.end) continue;
+      if (o.from == r || adj_[o.from][r]) {  // r was transmitting, or heard two at once
+        collisions_++;
+        return false;
+      }
+    }
+    return true;
+  }
+
