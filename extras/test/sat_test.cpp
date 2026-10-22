@@ -454,3 +454,57 @@ static void testNodeRules() {
     CHECK(c2 == 1 + n.config().repeats);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Simulated network
+
+struct SimConfig {
+  bool collisions = true;
+  double loss = 0.0;           // chance a packet is lost at one receiver
+  double foreign = 0.0;        // chance per second of someone else's packet at a station
+  bool forgetSeen = false;     // wipe every seen list every 500 ms
+  int stallMaxMs = 15;         // loop() sometimes busy for up to this long
+};
+
+struct Air {
+  int from;
+  uint32_t start, end;
+  std::vector<uint8_t> bytes;
+};
+
+struct MsgKey {
+  std::string origin;
+  uint16_t boot, seq;
+  bool operator<(const MsgKey& o) const {
+    if (origin != o.origin) return origin < o.origin;
+    if (boot != o.boot) return boot < o.boot;
+    return seq < o.seq;
+  }
+};
+
+static MsgKey keyOf(const Frame& f) { return {str(f.origin), f.boot, f.seq}; }
+
+struct Station {
+  std::string call;
+  Node node;
+  Parser parser;
+  std::vector<std::pair<uint32_t, uint8_t>> uart;  // byte, time it is readable
+  size_t uartPos = 0;
+  uint32_t lastRxByte = 0;
+  uint32_t txEnd = 0;
+  uint32_t stallUntil = 0;
+  std::map<MsgKey, int> txCount;        // transmissions per message
+  std::map<MsgKey, int> delivered;      // Rx::ForUs per message
+  std::set<uint16_t> acked;             // our seqs confirmed by AckForUs
+  uint32_t lastTx = 0;
+};
+
+class Sim {
+ public:
+  Sim(int n, uint32_t seed, SimConfig cfg) : st_(n), adj_(n, std::vector<bool>(n)), rng_(seed), cfg_(cfg) {}
+
+  void link(int a, int b) { adj_[a][b] = adj_[b][a] = true; }
+  bool linked(int a, int b) const { return adj_[a][b]; }
+  int size() const { return (int)st_.size(); }
+  Station& at(int i) { return st_[i]; }
+
