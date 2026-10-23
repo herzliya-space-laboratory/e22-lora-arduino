@@ -778,3 +778,41 @@ static void testRingAndMesh() {
   }
 }
 
+// Every station forgets what it has seen twice a second: only the hop limit
+// is left to stop the messages, and it has to.
+static void testForgetful() {
+  SimConfig cfg;
+  cfg.collisions = false;
+  cfg.forgetSeen = true;
+  Sim sim(6, 41, cfg);
+  sim.setup(0, "4X0GND", true);
+  for (int i = 1; i < 6; i++) sim.setup(i, satName(i), false);
+  for (int a = 0; a < 6; a++)
+    for (int b = a + 1; b < 6; b++) sim.link(a, b);
+  sim.send(0, "ALL", "forgotten");
+  sim.run(600000);
+  uint32_t quietFor = sim.now() - sim.lastMsgTx();
+  CHECK_MSG(quietFor > 300000, "messages still going %u ms before the end", sim.now() - sim.lastMsgTx());
+  for (int i = 0; i < 6; i++) CHECK(sim.at(i).node.stored() == 0);
+}
+
+// A satellite is power-cycled in the middle; its new messages (seq from 0
+// again) still get through.
+static void testPowerCycle() {
+  SimConfig cfg;
+  cfg.collisions = false;
+  Sim sim(4, 51, cfg);
+  sim.setup(0, "4X0GND", true);
+  for (int i = 1; i < 4; i++) sim.setup(i, satName(i), false);
+  for (int i = 0; i < 3; i++) sim.link(i, i + 1);
+  MsgKey before = sim.send(3, "4X0GND", "before");
+  sim.run(60000);
+  CHECK(sim.at(0).delivered.count(before) == 1);
+  sim.powerCycle(3);
+  MsgKey after = sim.send(3, "4X0GND", "after");
+  CHECK(after.seq == before.seq && after.boot == before.boot + 1);
+  sim.run(60000);
+  CHECK(sim.at(0).delivered.count(after) == 1);
+  CHECK(sim.at(3).acked.count(after.seq) == 1);
+}
+
