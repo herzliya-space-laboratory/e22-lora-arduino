@@ -738,3 +738,43 @@ static void testLine() {
   checkBounded(far, "line too far");
 }
 
+// Satellites in a ring, so every message comes back around: it must still stop.
+static void testRingAndMesh() {
+  for (int collisions = 0; collisions < 2; collisions++) {
+    SimConfig cfg;
+    cfg.collisions = collisions;
+    Sim ring(7, 21 + collisions, cfg);
+    ring.setup(0, "4X0GND", true);
+    for (int i = 1; i < 7; i++) ring.setup(i, satName(i), false);
+    ring.link(0, 1);
+    for (int i = 1; i < 6; i++) ring.link(i, i + 1);
+    ring.link(6, 1);
+    MsgKey m = ring.send(0, "ALL", "around");
+    ring.run(240000);
+    for (int i = 1; i < 7; i++)
+      CHECK_MSG(ring.at(i).delivered.count(m) == 1, "ring (collisions %d): %s missed it",
+                collisions, ring.at(i).call.c_str());
+    checkBounded(ring, "ring");
+
+    Sim mesh(8, 31 + collisions, cfg);
+    mesh.setup(0, "4X0GND", true);
+    for (int i = 1; i < 8; i++) mesh.setup(i, satName(i), false);
+    for (int a = 0; a < 8; a++)
+      for (int b = a + 1; b < 8; b++) mesh.link(a, b);
+    std::vector<MsgKey> msgs;
+    for (int k = 0; k < 3; k++) {
+      msgs.push_back(mesh.send(0, "ALL", "mesh " + std::to_string(k)));
+      mesh.run(2000);
+    }
+    MsgKey to5 = mesh.send(0, satName(5), "just you");
+    mesh.run(240000);
+    for (const MsgKey& m2 : msgs)
+      for (int i = 1; i < 8; i++)
+        CHECK_MSG(mesh.at(i).delivered.count(m2) == 1, "mesh (collisions %d): %s missed #%u",
+                  collisions, mesh.at(i).call.c_str(), m2.seq);
+    CHECK(mesh.at(5).delivered.count(to5) == 1);
+    CHECK(mesh.at(0).acked.count(to5.seq) == 1);
+    checkBounded(mesh, "mesh");
+  }
+}
+
