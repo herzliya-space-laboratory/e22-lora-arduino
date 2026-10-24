@@ -816,3 +816,66 @@ static void testPowerCycle() {
   CHECK(sim.at(3).acked.count(after.seq) == 1);
 }
 
+// Random networks, random traffic, collisions, lost packets, foreign traffic.
+// Always: every message stops and nobody sends one too often. Without
+// collisions and loss: every station in reach gets every broadcast, and every
+// addressed message arrives and is confirmed.
+static void testRandom() {
+  int runs = 0;
+  int cleanReachable = 0, cleanReached = 0, noisyReachable = 0, noisyReached = 0;
+  for (uint32_t seed = 1; seed <= 300; seed++) {
+    std::mt19937 rng(seed * 7919);
+    int n = 3 + (int)(rng() % 8);
+    SimConfig cfg;
+    cfg.collisions = rng() % 3 != 0;
+    cfg.loss = (rng() % 3) * 0.1;
+    cfg.foreign = (rng() % 2) * 0.2;
+    bool clean = !cfg.collisions && cfg.loss == 0;
+    Sim sim(n, seed, cfg);
+    sim.setup(0, "4X0GND", true);
+    for (int i = 1; i < n; i++) sim.setup(i, satName(i), false);
+    for (int a = 0; a < n; a++)
+      for (int b = a + 1; b < n; b++)
+        if (rng() % 100 < 35) sim.link(a, b);
+
+    struct Sent {
+      int from, to;  // to = -1: ALL
+      MsgKey key;
+    };
+    std::vector<Sent> sent;
+    int count = 1 + (int)(rng() % 4);
+    for (int k = 0; k < count; k++) {
+      int from = (int)(rng() % n);
+      int to = -1;
+      if (rng() % 2) to = from == 0 ? 1 + (int)(rng() % (n - 1)) : 0;
+      std::string dest = to < 0 ? "ALL" : sim.at(to).call;
+      sent.push_back({from, to, sim.send(from, dest, "random " + std::to_string(k))});
+      sim.run(rng() % 20000);
+    }
+    sim.run(300000);
+    char name[32];
+    std::snprintf(name, sizeof name, "random seed %u", seed);
+    checkBounded(sim, name);
+
+    for (const Sent& s : sent) {
+      std::vector<int> d = distancesFrom(sim, s.from);
+      int hops = sim.at(s.from).node.config().hops;
+      for (int i = 0; i < n; i++) {
+        if (i == s.from || d[i] < 0 || d[i] > hops + 1) continue;
+        if (s.to >= 0 ? i != s.to : i == 0) continue;  // the ground only takes messages to it
+        bool got = sim.at(i).delivered.count(s.key) == 1;
+        (clean ? cleanReachable : noisyReachable)++;
+        (clean ? cleanReached : noisyReached) += got;
+        if (clean) {
+          CHECK_MSG(got, "%s: %s (%d hops away) missed %s#%u.%u", name, sim.at(i).call.c_str(),
+                    d[i], s.key.origin.c_str(), s.key.boot, s.key.seq);
+          if (s.to >= 0) CHECK_MSG(sim.at(s.from).acked.count(s.key.seq) == 1, "%s: no ACK", name);
+        }
+      }
+    }
+    runs++;
+  }
+  std::printf("random: %d networks. Delivered in reach: %d/%d clean, %d/%d with collisions/loss\n",
+              runs, cleanReached, cleanReachable, noisyReached, noisyReachable);
+}
+
