@@ -52,3 +52,10 @@ jobs:
           sketch-paths: |
             - examples
           verbose: false
+
+  host-tests:
+    name: SatNode host tests (frame, parser, simulated network)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: extras/test/run.sh
