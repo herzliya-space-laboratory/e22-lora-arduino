@@ -879,3 +879,17 @@ static void testRandom() {
               runs, cleanReached, cleanReachable, noisyReached, noisyReachable);
 }
 
+int main() {
+  testCrc();
+  testEncodeDecode();
+  testCallsigns();
+  testParser();
+  testNodeRules();
+  testLine();
+  testRingAndMesh();
+  testForgetful();
+  testPowerCycle();
+  testRandom();
+  std::printf("%d checks, %d failed\n", checks, failures);
+  return failures ? 1 : 0;
+}
