@@ -102,6 +102,44 @@ Run them in this order on a new board:
 2. `PingPong` needs two boards. One sends PING, the other answers PONG. Both print the RSSI.
 3. `AirRateSweep` is the "change the SF every 10 seconds" experiment from the project document,
    done with the air rate. Both boards go through the six rates in sync, starting from boot.
+4. `SatNode` is the network: satellites that beacon and relay messages from station to station,
+   and a ground station (build with `-DROLE_GROUND=1`) that sends what you type on the serial
+   console. See below.
+
+### SatNode: the satellite network
+
+Every satellite and the ground station run the same sketch, on the same channel (23,
+433.125 MHz) and air rate (2.4 kbps). A message from the ground can reach a satellite out of
+range by passing through other satellites. The scheme is flooding with a hop limit:
+
+- Each frame carries the callsign of the station that wrote it (origin), of the station that
+  transmitted this copy (sender), the destination (a callsign or `ALL`), a message name (origin's
+  boot count + sequence number), hops left and a CRC-16. Layout in `examples/SatNode/Frame.h`.
+- A satellite relays every message it hears for the first time with one hop less, after a random
+  wait of 50..600 ms. It transmits the copy twice more, 20 s apart, for satellites that come
+  into range later.
+- It remembers the last 32 message names and ignores them when they come back, and it ignores
+  its own messages. The hop limit (3) stops every message even if a satellite has forgotten it.
+- A message to one station is answered with an ACK, which floods back the same way. The ACK
+  stops the repeats of that message at every station it passes.
+- Satellites send a beacon every 30 s with a counter, uptime, boot count and traffic counts.
+  Beacons are not relayed.
+- Frames from callsigns that do not start with 4X or 4Z are dropped.
+- The boot count is kept in EEPROM, so a satellite that was power-cycled does not reuse old
+  message names. If the radio does not answer, the sketch retries every 5 s; every 10 min it
+  checks that the module still has our settings. On AVR a watchdog resets the MCU if `loop()`
+  stops for 8 s.
+
+Console (Serial, 115200): `msg ALL hello`, `msg 4X0SAT hello`, `call 4X1ABC` (stored in EEPROM,
+placeholders are 4X0GND and 4X0SAT), `status`. Power is 21 dBm; build with `-DFULL_POWER=1` for
+30 dBm.
+
+`extras/test/run.sh` builds the frame, parser and relay code on the computer and runs it in a
+simulated network: lines, rings, full meshes and 300 random networks, with collisions, lost
+packets, someone else's traffic on the channel, power cycles and stations that forget what they
+have seen. It checks that every message stops, that no station transmits a message more than
+three times, and that every station in reach gets it when nothing is lost. CI runs it on every
+push.
 
 Each example has a block at the top that selects the serial port and the pins for each target.
 The driver takes either a HardwareSerial or a SoftwareSerial.
@@ -214,6 +252,7 @@ Tested on the bench on 2026-10-06 with two Arduino Unos and two E22-400T30D modu
 Not tested yet: the flight board itself (no AUX, SoftwareSerial on D2/D3), HardwareSerial, the
 ESP32, saving the configuration to flash (`C0`), timeouts with the module disconnected,
 receiving in wake-on-radio mode, listen-before-talk, relay, and transmit power above 21 dBm.
+`SatNode` passes its host tests and builds for all three targets, but has not run on a radio yet.
 
 In the lab, the module's transmission from a Uno showed up on a spectrum analyzer, so RF really
 leaves the antenna.
