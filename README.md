@@ -216,7 +216,7 @@ CI compiles every example for the ATmega328PB, the Uno and the ESP32 on every pu
   through a 1.3k / 2.7k divider (about 3.4 V). M0 and M1 are driven at 5 V directly, and that
   worked on the bench. Use the same divider on RXD when wiring a Uno.
 - AUX is not wired to the MCU on the flight board, so the driver uses fixed delays instead of
-  waiting for AUX (about 12 ms per wait, about 26 ms per mode switch). This has not been tested
+  waiting for AUX (12 ms per wait; a mode switch is three waits plus 2 ms, about 38 ms). This has not been tested
   on hardware yet; the bench tests all had AUX connected.
 - With `rssiByte` on, the module adds the RSSI byte after every radio packet. A message longer
   than the packet size (240 bytes by default) arrives with an RSSI byte after each 240 bytes,
