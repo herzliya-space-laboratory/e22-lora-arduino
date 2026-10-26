@@ -41,9 +41,12 @@ manual in `docs/` has the full register map.
 
 Some facts about the module that affect the design:
 
-- The spreading factor cannot be set directly. The module has an "air data rate" from 2.4 to
-  62.5 kbps, and each rate is a fixed SF/BW pair chosen by Ebyte. `setAirRate()` is the only
-  control we have.
+- There is no supported way to set the spreading factor. The module has an "air data rate" from
+  2.4 to 62.5 kbps, and each rate is a fixed SF/BW pair chosen by Ebyte. `setAirRate()` is the
+  only control we have. The manual lists a hidden certification command, `AT+ULORAM`, for SF,
+  BW and CR, with the syntax available only from Ebyte. On firmware 7453-0-21 it answers a read
+  (`AT+ULORAM=?` gives `0,0,0,0`) but rejects every write we tried with `=ERR`. Until we have
+  that syntax, the air rate is the only knob.
 - The other side of the link probably has to be another E22. Ebyte adds its own framing and FEC
   on top of LoRa, and we did not find anyone who decoded it with a normal SX127x. David says he
   received it once with different hardware. We will test this instead of assuming.
